@@ -77,10 +77,20 @@ export interface AppRuntime {
 export interface AppPreference {
   profile?: string;
   port?: number;
+  /** 覆盖扫描到的主类；写入 spring-boot.run.main-class */
+  mainClass?: string;
+}
+
+/** 手动分组：应用 id 最多属于一个分组 */
+export interface AppGroup {
+  name: string;
+  apps: string[];
 }
 
 export interface MesBootConfig {
   apps?: Record<string, AppPreference>;
+  /** 分组按数组顺序展示 */
+  groups?: AppGroup[];
 }
 
 /** 一次启动请求 */
@@ -89,6 +99,8 @@ export interface LaunchSpec {
   profile: string;
   /** 覆盖端口；undefined 表示用 profile 对应配置里的端口 */
   port?: number;
+  /** 实际启动的主类；有值时传给 spring-boot.run.main-class */
+  mainClass?: string;
   debug: boolean;
   debugPort?: number;
 }

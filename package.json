@@ -79,9 +79,45 @@
       },
       {
         "command": "webBoot.edit",
-        "title": "编辑 Profile / 端口...",
+        "title": "编辑 Profile / 端口 / 主类...",
         "category": "Web Boot",
         "icon": "$(edit)"
+      },
+      {
+        "command": "webBoot.createGroup",
+        "title": "新建分组...",
+        "category": "Web Boot",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "webBoot.renameGroup",
+        "title": "重命名分组...",
+        "category": "Web Boot",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "webBoot.deleteGroup",
+        "title": "删除分组",
+        "category": "Web Boot",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "webBoot.moveAppToGroup",
+        "title": "移动到分组...",
+        "category": "Web Boot",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "webBoot.startGroup",
+        "title": "启动整组",
+        "category": "Web Boot",
+        "icon": "$(play)"
+      },
+      {
+        "command": "webBoot.stopGroup",
+        "title": "停止整组",
+        "category": "Web Boot",
+        "icon": "$(debug-stop)"
       },
       {
         "command": "webBoot.debug",
@@ -145,6 +181,26 @@
           "when": "false"
         },
         {
+          "command": "webBoot.renameGroup",
+          "when": "false"
+        },
+        {
+          "command": "webBoot.deleteGroup",
+          "when": "false"
+        },
+        {
+          "command": "webBoot.moveAppToGroup",
+          "when": "false"
+        },
+        {
+          "command": "webBoot.startGroup",
+          "when": "false"
+        },
+        {
+          "command": "webBoot.stopGroup",
+          "when": "false"
+        },
+        {
           "command": "webBoot.debug",
           "when": "false"
         },
@@ -177,6 +233,11 @@
           "command": "webBoot.showOutput",
           "when": "view == webBoot.apps",
           "group": "navigation@4"
+        },
+        {
+          "command": "webBoot.createGroup",
+          "when": "view == webBoot.apps",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -211,6 +272,16 @@
           "group": "inline@3"
         },
         {
+          "command": "webBoot.startGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "inline@1"
+        },
+        {
+          "command": "webBoot.stopGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "inline@2"
+        },
+        {
           "command": "webBoot.run",
           "when": "view == webBoot.apps && viewItem == bootApp.stopped",
           "group": "1_run@1"
@@ -241,6 +312,11 @@
           "group": "2_tools@2"
         },
         {
+          "command": "webBoot.moveAppToGroup",
+          "when": "view == webBoot.apps && viewItem == bootApp.stopped",
+          "group": "2_tools@3"
+        },
+        {
           "command": "webBoot.stop",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "1_run@1"
@@ -254,6 +330,31 @@
           "command": "webBoot.edit",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "2_tools@2"
+        },
+        {
+          "command": "webBoot.moveAppToGroup",
+          "when": "view == webBoot.apps && viewItem == bootApp.running",
+          "group": "2_tools@3"
+        },
+        {
+          "command": "webBoot.startGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "1_group@1"
+        },
+        {
+          "command": "webBoot.stopGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "1_group@2"
+        },
+        {
+          "command": "webBoot.renameGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "2_group@1"
+        },
+        {
+          "command": "webBoot.deleteGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "2_group@2"
         }
       ]
     },

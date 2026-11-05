@@ -1,11 +1,12 @@
 /**
  * 侧边栏树：每个节点是一个可启动的 Spring Boot 应用。
  *
+ * 支持手动分组：分组按 .vscode/web-boot.json 中的顺序展示，应用可拖入/拖出分组。
  * 节点上要能一眼看出三件事：用哪个 profile、占哪个端口、是否在 reactor 内。
  * 端口冲突用警告图标提示（本仓库四个 web 模块默认都是 8080）。
  */
 import * as vscode from 'vscode';
-import type { AppPreference, AppRuntime, BootApp } from '../model/types';
+import type { AppGroup, AppPreference, AppRuntime, BootApp } from '../model/types';
 import type { PortConflict } from '../util/ports';
 import { buildUrl } from '../runner/command';
 
@@ -24,14 +25,20 @@ const STATE_LABEL: Record<string, string> = {
 };
 
 export class AppTreeItem extends vscode.TreeItem {
+  readonly kind = 'app' as const;
+
   constructor(
     public readonly app: BootApp,
     public readonly runtime: AppRuntime,
     public readonly profile: string,
     public readonly port: number,
-    public readonly conflict?: PortConflict
+    public readonly conflict?: PortConflict,
+    public readonly mainClass: string = app.mainClass,
+    /** 挂载在哪个分组下；undefined 表示未分组 */
+    public readonly groupName?: string
   ) {
     super(app.id, vscode.TreeItemCollapsibleState.None);
+    this.id = `app:${app.id}`;
 
     const contextPath = runtime.contextPath ?? app.config.contextPaths[profile] ?? app.config.baseContextPath;
     const stateText = STATE_LABEL[runtime.state] ?? runtime.state;
@@ -48,7 +55,7 @@ export class AppTreeItem extends vscode.TreeItem {
 
     this.iconPath = STATE_ICON[runtime.state] ?? STATE_ICON.stopped;
     this.contextValue = `bootApp.${runtime.state}`;
-    this.tooltip = buildTooltip(app, runtime, profile, port, contextPath, conflict);
+    this.tooltip = buildTooltip(app, runtime, profile, port, contextPath, conflict, mainClass);
 
     if (runtime.state === 'running') {
       const url = buildUrl(runtime.port ?? port, contextPath);
@@ -61,18 +68,51 @@ export class AppTreeItem extends vscode.TreeItem {
   }
 }
 
+/** 分组节点；groupName 为 undefined 时是虚拟的「未分组」桶 */
+export class GroupTreeItem extends vscode.TreeItem {
+  readonly kind = 'group' as const;
+
+  constructor(
+    public readonly groupName: string | undefined,
+    public readonly apps: BootApp[],
+    public readonly conflictPorts: number[] = []
+  ) {
+    super(
+      groupName ?? '未分组',
+      apps.length > 0
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.None
+    );
+    this.id = groupName ? `group:real:${groupName}` : 'group:virtual:ungrouped';
+    this.description = `${apps.length} 个应用${
+      conflictPorts.length > 0 ? ` · 冲突 ${conflictPorts.length} 组` : ''
+    }`;
+    this.contextValue = groupName ? 'bootGroup' : 'bootGroup.ungrouped';
+    this.iconPath = new vscode.ThemeIcon(
+      conflictPorts.length > 0 ? 'warning' : groupName ? 'folder' : 'inbox',
+      conflictPorts.length > 0 ? new vscode.ThemeColor('charts.yellow') : undefined
+    );
+    this.tooltip = buildGroupTooltip(groupName, apps, conflictPorts);
+  }
+}
+
+export type WebBootTreeItem = AppTreeItem | GroupTreeItem;
+
 function buildTooltip(
   app: BootApp,
   runtime: AppRuntime,
   profile: string,
   port: number,
   contextPath: string | undefined,
-  conflict?: PortConflict
+  conflict?: PortConflict,
+  mainClass: string = app.mainClass
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
   md.appendMarkdown(`**${app.id}**\n\n`);
   md.appendMarkdown(`- 模块：\`${app.relDir}\`\n`);
-  md.appendMarkdown(`- 启动类：\`${app.mainClass}\`\n`);
+  md.appendMarkdown(
+    `- 启动类：\`${mainClass}\`${mainClass !== app.mainClass ? '（覆盖）' : ''}\n`
+  );
   md.appendMarkdown(
     `- reactor：${app.inReactor ? '是' : `否（${app.reactorNote ?? '未声明'}）`}\n`
   );
@@ -97,9 +137,70 @@ function buildTooltip(
   return md;
 }
 
-export class AppsTreeProvider implements vscode.TreeDataProvider<AppTreeItem> {
+function buildGroupTooltip(
+  groupName: string | undefined,
+  apps: BootApp[],
+  conflictPorts: number[]
+): vscode.MarkdownString {
+  const md = new vscode.MarkdownString();
+  md.appendMarkdown(`**${groupName ?? '未分组'}**\n\n`);
+  md.appendMarkdown(`- 应用：${apps.length} 个\n`);
+  if (apps.length > 0) {
+    md.appendMarkdown(`- ${apps.map((a) => `\`${a.id}\``).join('、')}\n`);
+  }
+  if (conflictPorts.length > 0) {
+    md.appendMarkdown(`- 端口冲突：${conflictPorts.join(', ')}\n`);
+  }
+  if (groupName) {
+    md.appendMarkdown(`\n拖入应用可加入分组；右键可启动/停止整组。\n`);
+  }
+  return md;
+}
+
+export const APP_DRAG_MIME = 'application/vnd.code.tree.webboot.apps';
+
+/** 应用拖入分组（或拖到「未分组」移出分组） */
+export class AppsDragAndDropController
+  implements vscode.TreeDragAndDropController<WebBootTreeItem>
+{
+  readonly dragMimeTypes = [APP_DRAG_MIME];
+  readonly dropMimeTypes = [APP_DRAG_MIME];
+
+  constructor(
+    private readonly onDrop: (appIds: string[], groupName: string | undefined) => void
+  ) {}
+
+  handleDrag(source: readonly WebBootTreeItem[], dataTransfer: vscode.DataTransfer): void {
+    const ids = source
+      .filter((item): item is AppTreeItem => item instanceof AppTreeItem)
+      .map((item) => item.app.id);
+    if (ids.length > 0) {
+      dataTransfer.set(APP_DRAG_MIME, new vscode.DataTransferItem(ids));
+    }
+  }
+
+  handleDrop(
+    target: WebBootTreeItem | undefined,
+    dataTransfer: vscode.DataTransfer
+  ): void {
+    // 拖到分组标题或组内任意应用上都可以
+    let groupName: string | undefined;
+    if (target instanceof GroupTreeItem || target instanceof AppTreeItem) {
+      groupName = target.groupName;
+    } else {
+      return;
+    }
+    const data = dataTransfer.get(APP_DRAG_MIME);
+    const ids = data?.value as string[] | undefined;
+    if (ids && ids.length > 0) {
+      this.onDrop(ids, groupName);
+    }
+  }
+}
+
+export class AppsTreeProvider implements vscode.TreeDataProvider<WebBootTreeItem> {
   private apps: BootApp[] = [];
-  private readonly emitter = new vscode.EventEmitter<AppTreeItem | undefined>();
+  private readonly emitter = new vscode.EventEmitter<WebBootTreeItem | undefined>();
 
   readonly onDidChangeTreeData = this.emitter.event;
 
@@ -108,7 +209,8 @@ export class AppsTreeProvider implements vscode.TreeDataProvider<AppTreeItem> {
     private readonly getPreference: (appId: string) => AppPreference,
     private readonly getConflict: (appId: string) => PortConflict | undefined,
     private readonly resolveProfile: (app: BootApp, pref?: AppPreference) => string,
-    private readonly resolvePort: (app: BootApp, profile: string, pref?: AppPreference) => number
+    private readonly resolvePort: (app: BootApp, profile: string, pref?: AppPreference) => number,
+    private readonly getGroups: () => AppGroup[]
   ) {}
 
   setApps(apps: BootApp[]): void {
@@ -128,20 +230,66 @@ export class AppsTreeProvider implements vscode.TreeDataProvider<AppTreeItem> {
     this.emitter.fire(undefined);
   }
 
-  getChildren(element?: AppTreeItem): AppTreeItem[] {
-    if (element) {
+  getChildren(element?: WebBootTreeItem): WebBootTreeItem[] {
+    if (element instanceof AppTreeItem) {
       return [];
     }
-    return this.apps.map((app) => {
-      const pref = this.getPreference(app.id);
-      const runtime = this.getRuntime(app.id);
-      const profile = runtime.profile ?? this.resolveProfile(app, pref);
-      const port = runtime.port ?? this.resolvePort(app, profile, pref);
-      return new AppTreeItem(app, runtime, profile, port, this.getConflict(app.id));
-    });
+    if (element instanceof GroupTreeItem) {
+      return element.apps.map((app) => this.createAppItem(app, element.groupName));
+    }
+
+    const groups = this.getGroups();
+    if (groups.length === 0) {
+      return this.apps.map((app) => this.createAppItem(app));
+    }
+
+    const items: WebBootTreeItem[] = groups.map((group) => this.createGroupItem(group));
+    const assigned = new Set(groups.flatMap((g) => g.apps));
+    const ungrouped = this.apps.filter((a) => !assigned.has(a.id));
+    items.push(
+      new GroupTreeItem(undefined, ungrouped, this.conflictPorts(ungrouped))
+    );
+    return items;
   }
 
-  getTreeItem(element: AppTreeItem): vscode.TreeItem {
+  getTreeItem(element: WebBootTreeItem): vscode.TreeItem {
     return element;
+  }
+
+  private createAppItem(app: BootApp, groupName?: string): AppTreeItem {
+    const pref = this.getPreference(app.id);
+    const runtime = this.getRuntime(app.id);
+    const profile = runtime.profile ?? this.resolveProfile(app, pref);
+    const port = runtime.port ?? this.resolvePort(app, profile, pref);
+    const mainClass = pref.mainClass || app.mainClass;
+    return new AppTreeItem(
+      app,
+      runtime,
+      profile,
+      port,
+      this.getConflict(app.id),
+      mainClass,
+      groupName
+    );
+  }
+
+  private createGroupItem(group: AppGroup): GroupTreeItem {
+    const byId = new Map(this.apps.map((app) => [app.id, app]));
+    const apps = group.apps
+      .map((id) => byId.get(id))
+      .filter((app): app is BootApp => !!app)
+      .sort((a, b) => a.id.localeCompare(b.id));
+    return new GroupTreeItem(group.name, apps, this.conflictPorts(apps));
+  }
+
+  private conflictPorts(apps: BootApp[]): number[] {
+    const ports = new Set<number>();
+    for (const app of apps) {
+      const conflict = this.getConflict(app.id);
+      if (conflict) {
+        ports.add(conflict.port);
+      }
+    }
+    return Array.from(ports).sort((a, b) => a - b);
   }
 }

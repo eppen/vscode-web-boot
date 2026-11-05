@@ -20,6 +20,7 @@ Web Boot Runner detects both cases and handles them automatically.
 ### Features
 
 - **Application tree** in the activity bar, showing live status, profile, port, and context path.
+- **Manual groups** — create groups in the tree, drag apps in or out, and start/stop an entire group; group nodes summarize port conflicts among their members.
 - **One-click run** via `mvn spring-boot:run`, with an optional pre-build step (`compile` by default).
 - **Reactor-aware commands** — uses `-pl :artifact -am` inside the reactor and falls back to `-f <module>/pom.xml` outside it.
 - **Profile-aware ports** — merges the base config with each `application-<profile>.*` file to compute the effective port and context path.
@@ -58,18 +59,23 @@ monitor-server         dev    :9999   /monitor
 
 - Click a stopped app to run it; click a running app to open it in the browser.
 - Hover a node for inline Run / Debug / Edit or Open / Stop / Edit buttons.
-- Right-click for profile selection, port override, profile/port editing, and command copy.
-- Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output.
+- Right-click for profile selection, port override, profile/port/main-class editing, moving apps between groups, and command copy.
+- Drag apps onto a group (or onto the virtual "Ungrouped" bucket) to organize them; group nodes expose start/stop for the whole group.
+- Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output, create group.
 
 ### Commands
 
 | Command | Description |
 | --- | --- |
 | `Web Boot: 刷新应用列表` (Refresh) | Rescan POMs and Spring configuration files |
-| `Web Boot: 运行` (Run) | Start with the remembered profile and port |
+| `Web Boot: 运行` (Run) | Start with the remembered profile, port, and main class |
 | `Web Boot: 选择 Profile 运行...` (Run with Profile) | Pick a profile from the module's `application-*.yml` files; clears the remembered port so the profile's own port applies |
 | `Web Boot: 指定端口运行...` (Run with Port) | Override the port and remember it |
-| `Web Boot: 编辑 Profile / 端口...` (Edit) | Edit the remembered profile and port without launching; an empty port falls back to the config file, and changes apply on the next start |
+| `Web Boot: 编辑 Profile / 端口 / 主类...` (Edit) | Edit the remembered profile, port, and main class without launching; an empty port falls back to the config file, and changes apply on the next start |
+| `Web Boot: 新建分组...` (Create Group) | Create a manual group; drag apps into it afterwards |
+| `Web Boot: 重命名分组...` / `删除分组` (Rename / Delete Group) | Rename or delete a group; deleting only ungroups apps |
+| `Web Boot: 移动到分组...` (Move to Group) | Move an app into a group or back to "Ungrouped" |
+| `Web Boot: 启动整组` / `停止整组` (Start / Stop Group) | Start the group's stopped apps in order, or stop its running apps |
 | `Web Boot: 调试运行（自动 attach）` (Debug) | Start with JDWP and attach automatically after startup |
 | `Web Boot: 停止` (Stop) | End the whole process tree with `taskkill /T /F` |
 | `Web Boot: 在浏览器中打开` (Open) | Build the URL from port and context path |
@@ -91,7 +97,7 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.javaHome` | empty | Override `JAVA_HOME` for launched processes |
 | `webBoot.extraArgs` | `[]` | Extra JVM arguments, for example `-Xmx2g` |
 
-Per-app profile and port preferences are stored in `.vscode/web-boot.json` inside the workspace.
+Per-app preferences (profile, port, main class) and manual groups are stored in `.vscode/web-boot.json` inside the workspace.
 
 ### How it works
 
@@ -128,6 +134,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 ### 功能
 
 - **应用树**：活动栏中的列表，直接显示运行状态、profile、端口与 context-path。
+- **手动分组**：在树中新建分组，拖拽应用归类，可整组启动 / 停止；分组标题汇总组内端口冲突。
 - **一键启动**：通过 `mvn spring-boot:run` 启动，可选预编译步骤（默认 `compile`）。
 - **reactor 感知**：reactor 内使用 `-pl :artifact -am`，reactor 外自动降级为 `-f <模块>/pom.xml`。
 - **profile 端口计算**：将基础配置与每个 `application-<profile>.*` 深合并，算出该 profile 的生效端口与 context-path。
@@ -166,18 +173,23 @@ monitor-server         dev    :9999   /monitor
 
 - 点击未运行的节点启动应用；点击运行中的节点在浏览器打开。
 - 悬浮节点出现内联按钮：启动 / 调试 / 编辑，或打开 / 停止 / 编辑。
-- 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口、复制启动命令。
-- 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出。
+- 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口 / 主类、移动到分组、复制启动命令。
+- 把应用拖到分组（或虚拟的「未分组」桶）即可归类；分组节点可启动 / 停止整组。
+- 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出、新建分组。
 
 ### 命令
 
 | 命令 | 说明 |
 | --- | --- |
 | `Web Boot: 刷新应用列表` | 重新扫描 POM 与 Spring 配置文件 |
-| `Web Boot: 运行` | 用记住的 profile 与端口启动 |
+| `Web Boot: 运行` | 用记住的 profile、端口与主类启动 |
 | `Web Boot: 选择 Profile 运行...` | 从模块的 `application-*.yml` 中选择 profile；切换时会清掉记住的端口，让新 profile 的配置生效 |
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
-| `Web Boot: 编辑 Profile / 端口...` | 不启动进程，直接修改记住的 profile 与端口；端口留空则回到配置文件的值，运行中的实例重启后生效 |
+| `Web Boot: 编辑 Profile / 端口 / 主类...` | 不启动进程，逐项修改记住的 profile、端口与主类；端口留空则回到配置文件的值，主类可选扫描候选或手动输入，运行中的实例重启后生效 |
+| `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
+| `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除只解除归类，不删除应用 |
+| `Web Boot: 移动到分组...` | 把应用移入分组或移回「未分组」 |
+| `Web Boot: 启动整组` / `停止整组` | 按顺序启动组内未运行的应用，或停止组内运行中的应用 |
 | `Web Boot: 调试运行（自动 attach）` | 以 JDWP 启动，就绪后自动 attach |
 | `Web Boot: 停止` | 用 `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 在浏览器中打开` | 按端口与 context-path 拼接地址 |
@@ -199,7 +211,7 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.javaHome` | 空 | 覆盖启动进程的 `JAVA_HOME` |
 | `webBoot.extraArgs` | `[]` | 追加 JVM 参数，例如 `-Xmx2g` |
 
-每个应用的 profile 与端口偏好保存在工作区的 `.vscode/web-boot.json`。
+每个应用的 profile、端口、主类偏好与手动分组保存在工作区的 `.vscode/web-boot.json`。
 
 ### 实现方式
 

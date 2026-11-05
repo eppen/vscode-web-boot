@@ -1,6 +1,6 @@
 # Web Boot Runner
 
-一个用于 VS Code / Cursor 的 Spring Boot 应用管理扩展：在多模块 Maven 工作区中启动、停止应用，记住 profile 与端口，并在启动前检测端口冲突。
+一个用于 VS Code / Cursor 的 Spring Boot 应用管理扩展：在多模块 Maven 工作区中启动、停止应用，记住 profile、端口与主类，并在启动前检测端口冲突。
 
 ## 解决的问题
 
@@ -65,9 +65,10 @@ sample-monitor-server   dev    :9999   /monitor
 
 - 点击节点：未运行则启动，运行中则打开浏览器
 - 悬浮节点出现内联按钮：未运行时为启动 / 调试，运行中为打开 / 停止
-- 悬浮运行中的节点也会出现编辑按钮，随时调整下次启动的 profile / 端口
-- 右键菜单：选择 Profile 运行、指定端口运行、编辑 Profile / 端口、复制启动命令
-- 标题栏按钮：刷新、检查端口冲突、生成 launch.json、显示输出
+- 悬浮运行中的节点也会出现编辑按钮，随时调整下次启动的 profile / 端口 / 主类
+- 右键菜单：选择 Profile 运行、指定端口运行、编辑 Profile / 端口 / 主类、移动到分组、复制启动命令
+- 标题栏按钮：刷新、检查端口冲突、生成 launch.json、显示输出、新建分组
+- 分组：手动创建分组后，把应用拖进分组即可归类；拖到「未分组」移出。分组标题显示应用数与端口冲突组数，右键或内联按钮可启动 / 停止整组
 - 底部状态栏：显示应用总数与运行中数量，点击定位到 Web Boot 视图
 - 修改 `pom.xml` 或 `application*.yml` 后自动重新扫描，通常不需要手动刷新
 - 启动前检查端口占用，被占用时可选择自动换端口、仍用该端口或取消
@@ -88,10 +89,14 @@ sample-monitor-server   dev    :9999   /monitor
 | 命令 | 说明 |
 | --- | --- |
 | `Web Boot: 刷新应用列表` | 重新扫描 pom 与 application 配置 |
-| `Web Boot: 运行` | 用记住的 profile / 端口启动 |
+| `Web Boot: 运行` | 用记住的 profile / 端口 / 主类启动 |
 | `Web Boot: 选择 Profile 运行...` | 从该模块的 `application-*.yml` 里选，选完会清掉记住的端口，让新 profile 的 yml 端口生效 |
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
-| `Web Boot: 编辑 Profile / 端口...` | 修改记住的 profile 与端口，不启动进程；端口留空则回到配置文件的值，运行中的实例重启后生效 |
+| `Web Boot: 编辑 Profile / 端口 / 主类...` | 逐项修改记住的 profile、端口、主类，不启动进程；端口留空则回到配置文件的值，主类可选扫描到的候选或手动输入，运行中的实例重启后生效 |
+| `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
+| `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除分组只解除归类，不删除应用 |
+| `Web Boot: 移动到分组...` | 通过菜单把某个应用移入分组或移出到「未分组」 |
+| `Web Boot: 启动整组` / `停止整组` | 按顺序启动组内未运行的应用，或停止组内运行中的应用 |
 | `Web Boot: 调试运行（自动 attach）` | 启动加 JDWP，Spring Boot 打出 `Started ...` 后自动 attach |
 | `Web Boot: 停止` | `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 在浏览器中打开` | 按 `端口 + context-path` 拼地址 |
@@ -113,7 +118,21 @@ sample-monitor-server   dev    :9999   /monitor
 | `webBoot.javaHome` | 空 | 覆盖启动进程的 `JAVA_HOME` |
 | `webBoot.extraArgs` | `[]` | 追加 JVM 参数，如 `-Xmx2g` |
 
-每个应用的 profile / 端口记在 `.vscode/web-boot.json`。该目录通常已被业务仓库的 `.gitignore` 忽略，属于个人配置。
+每个应用的 profile / 端口 / 主类和分组记在 `.vscode/web-boot.json`。该目录通常已被业务仓库的 `.gitignore` 忽略，属于个人配置：
+
+```json
+{
+  "apps": {
+    "sample-web": { "profile": "dev", "port": 8082, "mainClass": "com.example.SampleWebApplication" }
+  },
+  "groups": [
+    { "name": "核心服务", "apps": ["sample-web", "sample-report-web"] },
+    { "name": "工具", "apps": ["sample-monitor-server"] }
+  ]
+}
+```
+
+一个应用最多属于一个分组；未列入任何分组的应用显示在「未分组」下（仅在存在分组时出现）。
 
 ## 实现要点
 
@@ -163,6 +182,7 @@ reactor 内：
 ```bash
 mvn -B -pl :sample-web -am -DskipTests spring-boot:run \
   -Dspring-boot.run.profiles=dev \
+  -Dspring-boot.run.main-class=com.example.SampleWebApplication \
   -Dspring-boot.run.arguments=--server.port=8082 \
   "-Dspring-boot.run.jvmArguments=-Dspring.devtools.restart.enabled=false"
 ```
@@ -170,8 +190,12 @@ mvn -B -pl :sample-web -am -DskipTests spring-boot:run \
 reactor 外：
 
 ```bash
-mvn -B -f sample-monitor-server/pom.xml -DskipTests spring-boot:run -Dspring-boot.run.profiles=dev
+mvn -B -f sample-monitor-server/pom.xml -DskipTests spring-boot:run \
+  -Dspring-boot.run.profiles=dev \
+  -Dspring-boot.run.main-class=com.example.monitor.MonitorServerApplication
 ```
+
+主类默认取扫描结果；在「编辑 Profile / 端口 / 主类...」里可改为同模块的其它启动类或手动输入全限定名。
 
 调试时在 `jvmArguments` 里追加：
 

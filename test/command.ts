@@ -24,7 +24,13 @@ async function main(): Promise<void> {
     }
     const profile = defaultProfile(app.config);
     const plan = buildCommandPlan(
-      { app, profile, port: resolvePort(app.config, profile), debug: false },
+      {
+        app,
+        profile,
+        port: resolvePort(app.config, profile),
+        mainClass: app.mainClass,
+        debug: false
+      },
       opts
     );
     console.log(`=== ${id} (profile=${profile}, inReactor=${app.inReactor}) ===`);
@@ -37,7 +43,14 @@ async function main(): Promise<void> {
   const app = apps.find((a) => a.id === 'mes-web');
   if (app) {
     const plan = buildCommandPlan(
-      { app, profile: 'eos2', port: 9090, debug: true, debugPort: 5005 },
+      {
+        app,
+        profile: 'eos2',
+        port: 9090,
+        mainClass: app.mainClass,
+        debug: true,
+        debugPort: 5005
+      },
       opts
     );
     console.log('');

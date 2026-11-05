@@ -38,7 +38,7 @@ export function buildLaunchConfigs(
       name: `${CONFIG_PREFIX}${app.id} (${profile || 'default'} :${port})`,
       request: 'launch',
       cwd: '${workspaceFolder}',
-      mainClass: app.mainClass,
+      mainClass: pref.mainClass || app.mainClass,
       projectName: app.id.split('#')[0],
       args: [profile ? `--spring.profiles.active=${profile}` : '', `--server.port=${port}`]
         .filter(Boolean)

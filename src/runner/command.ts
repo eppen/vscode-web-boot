@@ -81,6 +81,11 @@ export function buildCommandPlan(spec: LaunchSpec, opts: BuildOptions): CommandP
   if (spec.profile) {
     run.push(`-Dspring-boot.run.profiles=${spec.profile}`);
   }
+  if (spec.mainClass) {
+    // 显式指定主类：模块里有多个 @SpringBootApplication 时避免插件报
+    // "Unable to find a single main class"
+    run.push(`-Dspring-boot.run.main-class=${spec.mainClass}`);
+  }
   if (spec.port !== undefined) {
     run.push(`-Dspring-boot.run.arguments=--server.port=${spec.port}`);
   }

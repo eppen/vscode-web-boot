@@ -14,7 +14,13 @@ import {
 } from './scanner/springConfig';
 import { PreferenceStore } from './config/store';
 import { BootRunner } from './runner/launcher';
-import { AppTreeItem, AppsTreeProvider } from './views/appsTreeProvider';
+import {
+  AppTreeItem,
+  AppsDragAndDropController,
+  AppsTreeProvider,
+  GroupTreeItem,
+  type WebBootTreeItem
+} from './views/appsTreeProvider';
 import {
   computeConflicts,
   findFreePort,
@@ -187,7 +193,7 @@ async function ensurePort(
 async function launch(
   app: BootApp,
   opts: { debug?: boolean; profile?: string; port?: number; clearPort?: boolean } = {}
-): Promise<void> {
+): Promise<boolean> {
   const pref = store.get(app.id);
   const profile = opts.profile ?? pref.profile ?? defaultProfile(app.config);
   const effectivePref: AppPreference = {
@@ -196,9 +202,15 @@ async function launch(
   };
   const port = await ensurePort(app, profile, effectivePref);
   if (port === null) {
-    return;
+    return false;
   }
-  const spec: LaunchSpec = { app, profile, port, debug: !!opts.debug };
+  const spec: LaunchSpec = {
+    app,
+    profile,
+    port,
+    mainClass: pref.mainClass || app.mainClass,
+    debug: !!opts.debug
+  };
   const ok = await runner.launch(app, spec);
   if (ok) {
     // 只记住「与配置文件不同」的端口，避免换了 profile 还沿用上一个 profile 的端口
@@ -207,7 +219,9 @@ async function launch(
     recomputeConflicts();
     provider.refresh();
     updateStatusBar();
+    return true;
   }
+  return false;
 }
 
 /** 选择 profile（含手动输入）。取消返回 undefined。 */
@@ -269,60 +283,320 @@ async function runWithPort(app: BootApp): Promise<void> {
   await launch(app, { port: Number(input) });
 }
 
-/**
- * 编辑应用记住的 profile 与端口，只写 .vscode/web-boot.json，不启动进程。
- * 端口留空表示清除覆盖，回到 profile 对应配置文件的端口。
- */
-async function editPreferences(app: BootApp): Promise<void> {
-  const pref = store.get(app.id);
-  const currentProfile = resolveProfile(app, pref);
+function isJavaFqn(value: string): boolean {
+  return /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(value);
+}
 
-  const profile = await pickProfile(app, currentProfile);
-  if (profile === undefined) {
-    return;
+/** 选择主类：同模块扫描到的候选 + 手动输入。取消返回 undefined。 */
+async function pickMainClass(app: BootApp, current: string): Promise<string | undefined> {
+  const candidates = Array.from(
+    new Set(apps.filter((a) => a.dir === app.dir).map((a) => a.mainClass))
+  );
+  if (!candidates.includes(current)) {
+    candidates.unshift(current);
   }
-
-  const configPort = resolvePortFromConfig(app.config, profile);
-  // 换了 profile，旧端口覆盖不再适用，改用新 profile 的配置端口作为默认值
-  const currentPort =
-    profile === currentProfile ? resolvePortValue(app, profile, pref) : configPort;
+  const items: (vscode.QuickPickItem & { mainClass?: string; manual?: boolean })[] =
+    candidates.map((name) => ({
+      label: name,
+      description: [
+        name === app.mainClass ? '扫描到的启动类' : '',
+        name === current && name !== app.mainClass ? '当前覆盖' : ''
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      mainClass: name
+    }));
+  items.push({ label: '$(edit) 手动输入...', manual: true });
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: `选择 ${app.id} 的主类`,
+    matchOnDescription: false
+  });
+  if (!picked) {
+    return undefined;
+  }
+  if (!picked.manual) {
+    return picked.mainClass ?? picked.label;
+  }
   const input = await vscode.window.showInputBox({
-    prompt: `输入 ${app.id} 的监听端口（留空使用配置文件中的 ${configPort}）`,
-    value: String(currentPort),
+    prompt: '主类全限定名，如 com.example.MyApplication',
+    value: current,
     validateInput: (value) => {
       const text = value.trim();
       if (!text) {
-        return undefined;
+        return '请输入主类全限定名';
       }
-      const port = Number(text);
-      if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-        return '请输入 1 - 65535 之间的整数，或留空使用配置文件端口';
-      }
-      return undefined;
+      return isJavaFqn(text)
+        ? undefined
+        : '请输入合法的全限定类名，如 com.example.MyApplication';
     }
   });
-  if (input === undefined) {
-    return;
-  }
+  return input === undefined ? undefined : input.trim();
+}
 
-  const text = input.trim();
-  const port = text ? Number(text) : undefined;
-  // 与配置文件一致时不写覆盖，之后换 profile 能自然跟随 yml
-  await store.set(app.id, {
-    profile,
-    port: port === undefined || port === configPort ? undefined : port
-  });
-
+function afterPreferenceChange(app: BootApp, detail: string): void {
   recomputeConflicts();
   provider.refresh();
   updateStatusBar();
-
-  const effective = port ?? configPort;
-  const note = port === undefined || port === configPort ? '（来自配置文件）' : '（覆盖）';
-  const detail = `profile ${profile || '(默认)'} · :${effective}${note}`;
   output.appendLine(`[偏好] ${app.id}: ${detail}`);
   const suffix = runner.getRuntime(app.id).state === 'running' ? '，重启后生效' : '';
   void vscode.window.showInformationMessage(`${app.id} 偏好已保存：${detail}${suffix}。`);
+}
+
+type EditField = 'profile' | 'port' | 'mainClass';
+
+/**
+ * 编辑应用记住的启动配置（profile / 端口 / 主类）。
+ * 只写 .vscode/web-boot.json，不启动进程；端口留空表示回到配置文件的端口。
+ */
+async function editPreferences(app: BootApp): Promise<void> {
+  const pref = store.get(app.id);
+  const profile = resolveProfile(app, pref);
+  const port = resolvePortValue(app, profile, pref);
+  const mainClass = pref.mainClass || app.mainClass;
+
+  const items: (vscode.QuickPickItem & { field: EditField })[] = [
+    {
+      label: '$(account) Profile',
+      description: `${profile || '(默认)'}${pref.profile ? '（已记住）' : ''}`,
+      field: 'profile'
+    },
+    {
+      label: '$(plug) 端口',
+      description: `${port}${pref.port === undefined ? '（来自配置文件）' : '（覆盖）'}`,
+      field: 'port'
+    },
+    {
+      label: '$(symbol-class) 主类',
+      description: `${mainClass}${pref.mainClass ? '（覆盖）' : '（扫描）'}`,
+      field: 'mainClass'
+    }
+  ];
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: `编辑 ${app.id} 的启动配置`
+  });
+  if (!picked) {
+    return;
+  }
+
+  if (picked.field === 'profile') {
+    const next = await pickProfile(app, profile);
+    if (next === undefined || next === profile) {
+      return;
+    }
+    // 换 profile 时清掉端口覆盖，让新 profile 的 yml 端口生效
+    const cleared = pref.port === undefined ? '' : '，已清除端口覆盖';
+    await store.set(app.id, { profile: next, port: undefined });
+    afterPreferenceChange(app, `profile ${next || '(默认)'}${cleared}`);
+    return;
+  }
+
+  if (picked.field === 'port') {
+    const configPort = resolvePortFromConfig(app.config, profile);
+    const input = await vscode.window.showInputBox({
+      prompt: `输入 ${app.id} 的监听端口（留空使用配置文件中的 ${configPort}）`,
+      value: String(port),
+      validateInput: (value) => {
+        const text = value.trim();
+        if (!text) {
+          return undefined;
+        }
+        const num = Number(text);
+        if (!Number.isInteger(num) || num <= 0 || num > 65535) {
+          return '请输入 1 - 65535 之间的整数，或留空使用配置文件端口';
+        }
+        return undefined;
+      }
+    });
+    if (input === undefined) {
+      return;
+    }
+    const text = input.trim();
+    const next = text ? Number(text) : undefined;
+    // 与配置文件一致时不写覆盖，之后换 profile 能自然跟随 yml
+    await store.set(app.id, {
+      port: next === undefined || next === configPort ? undefined : next
+    });
+    afterPreferenceChange(
+      app,
+      `端口 ${next ?? configPort}${
+        next === undefined || next === configPort ? '（来自配置文件）' : '（覆盖）'
+      }`
+    );
+    return;
+  }
+
+  const next = await pickMainClass(app, mainClass);
+  if (next === undefined) {
+    return;
+  }
+  await store.set(app.id, { mainClass: next === app.mainClass ? undefined : next });
+  afterPreferenceChange(app, `主类 ${next}${next === app.mainClass ? '（扫描）' : '（覆盖）'}`);
+}
+
+async function promptGroupName(
+  prompt: string,
+  value: string,
+  currentName?: string
+): Promise<string | undefined> {
+  const input = await vscode.window.showInputBox({
+    prompt,
+    value,
+    validateInput: (text) => {
+      const name = text.trim();
+      if (!name) {
+        return '请输入分组名称';
+      }
+      const exists = store.getGroups().some(
+        (g) => g.name.toLowerCase() === name.toLowerCase() && g.name !== currentName
+      );
+      return exists ? '已存在同名分组' : undefined;
+    }
+  });
+  return input === undefined ? undefined : input.trim();
+}
+
+async function createGroup(): Promise<void> {
+  const name = await promptGroupName('新建分组名称', '');
+  if (!name) {
+    return;
+  }
+  await store.createGroup(name);
+  provider.refresh();
+  output.appendLine(`[分组] 新建分组 ${name}。`);
+  void vscode.window.showInformationMessage(`已新建分组「${name}」，可拖拽应用加入。`);
+}
+
+async function renameGroup(item: GroupTreeItem): Promise<void> {
+  if (!item.groupName) {
+    return;
+  }
+  const name = await promptGroupName(
+    `重命名分组「${item.groupName}」`,
+    item.groupName,
+    item.groupName
+  );
+  if (name === undefined || name === item.groupName) {
+    return;
+  }
+  await store.renameGroup(item.groupName, name);
+  provider.refresh();
+  output.appendLine(`[分组] ${item.groupName} 重命名为 ${name}。`);
+}
+
+async function deleteGroup(item: GroupTreeItem): Promise<void> {
+  if (!item.groupName) {
+    return;
+  }
+  const choice = await vscode.window.showWarningMessage(
+    `删除分组「${item.groupName}」？组内 ${item.apps.length} 个应用会变为未分组，应用本身不会被删除。`,
+    { modal: true },
+    '删除'
+  );
+  if (choice !== '删除') {
+    return;
+  }
+  await store.deleteGroup(item.groupName);
+  provider.refresh();
+  output.appendLine(`[分组] 删除分组 ${item.groupName}。`);
+}
+
+async function moveAppToGroup(app: BootApp): Promise<void> {
+  const current = store.groupOf(app.id);
+  const items: (vscode.QuickPickItem & { target?: string; none?: boolean; create?: boolean })[] = [
+    { label: '$(inbox) 未分组', description: current ? '' : '当前', none: true },
+    ...store.getGroups().map((g) => ({
+      label: `$(folder) ${g.name}`,
+      description: g.name === current ? '当前' : '',
+      target: g.name
+    })),
+    { label: '$(add) 新建分组...', create: true }
+  ];
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: `把 ${app.id} 移动到分组`
+  });
+  if (!picked) {
+    return;
+  }
+
+  let target = picked.none ? undefined : picked.target;
+  if (picked.create) {
+    const name = await promptGroupName('新建分组名称', '');
+    if (!name) {
+      return;
+    }
+    await store.createGroup(name);
+    target = name;
+  }
+  if (target === current) {
+    return;
+  }
+  await store.assignApps([app.id], target);
+  provider.refresh();
+  output.appendLine(`[分组] ${app.id} 移动到${target ? `分组 ${target}` : '未分组'}。`);
+}
+
+async function assignAppsToGroup(appIds: string[], groupName: string | undefined): Promise<void> {
+  if (!groupName && store.getGroups().length === 0) {
+    // 未启用分组时拖拽没有意义，也避免往配置里写空 groups
+    return;
+  }
+  await store.assignApps(appIds, groupName);
+  provider.refresh();
+  output.appendLine(
+    `[分组] ${appIds.join(', ')} 移动到${groupName ? `分组 ${groupName}` : '未分组'}。`
+  );
+}
+
+async function startGroup(item: GroupTreeItem): Promise<void> {
+  if (!item.groupName) {
+    return;
+  }
+  if (item.apps.length === 0) {
+    void vscode.window.showInformationMessage(`分组「${item.groupName}」还没有应用。`);
+    return;
+  }
+  const toStart = item.apps.filter(
+    (app) => runner.getRuntime(app.id).state === 'stopped'
+  );
+  if (toStart.length === 0) {
+    void vscode.window.showInformationMessage(`分组「${item.groupName}」内的应用都已在运行或启动中。`);
+    return;
+  }
+
+  output.appendLine(
+    `[分组] 启动「${item.groupName}」：${toStart.map((a) => a.id).join(', ')}`
+  );
+  for (const app of toStart) {
+    const ok = await launch(app);
+    if (!ok) {
+      output.appendLine(`[分组] ${app.id} 启动未完成，已中止整组启动。`);
+      void vscode.window.showWarningMessage(
+        `分组「${item.groupName}」启动在 ${app.id} 处中止，请查看 Web Boot 输出。`
+      );
+      return;
+    }
+  }
+}
+
+async function stopGroup(item: GroupTreeItem): Promise<void> {
+  if (!item.groupName) {
+    return;
+  }
+  const running = item.apps.filter((app) => {
+    const state = runner.getRuntime(app.id).state;
+    return state === 'running' || state === 'starting' || state === 'stopping';
+  });
+  if (running.length === 0) {
+    void vscode.window.showInformationMessage(`分组「${item.groupName}」内没有正在运行的应用。`);
+    return;
+  }
+
+  output.appendLine(
+    `[分组] 停止「${item.groupName}」：${running.map((a) => a.id).join(', ')}`
+  );
+  for (const app of running) {
+    await stopApp(app);
+  }
 }
 
 async function stopApp(app: BootApp): Promise<void> {
@@ -348,7 +622,13 @@ async function copyCommand(app: BootApp): Promise<void> {
   const pref = store.get(app.id);
   const profile = resolveProfile(app, pref);
   const port = resolvePortValue(app, profile, pref);
-  const spec: LaunchSpec = { app, profile, port, debug: false };
+  const spec: LaunchSpec = {
+    app,
+    profile,
+    port,
+    mainClass: pref.mainClass || app.mainClass,
+    debug: false
+  };
   const text = runner.describe(spec);
   await vscode.env.clipboard.writeText(text);
   void vscode.window.showInformationMessage(`已复制 ${app.id} 的启动命令。`);
@@ -426,12 +706,16 @@ export function activate(context: vscode.ExtensionContext): void {
     (appId) => store.get(appId),
     (appId) => conflictMap.get(appId),
     resolveProfile,
-    resolvePortValue
+    resolvePortValue,
+    () => store.getGroups()
   );
 
-  const treeView = vscode.window.createTreeView('webBoot.apps', {
+  const treeView = vscode.window.createTreeView<WebBootTreeItem>('webBoot.apps', {
     treeDataProvider: provider,
-    showCollapseAll: false
+    showCollapseAll: true,
+    dragAndDropController: new AppsDragAndDropController((appIds, groupName) => {
+      void assignAppsToGroup(appIds, groupName);
+    })
   });
 
   statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
@@ -465,6 +749,33 @@ export function activate(context: vscode.ExtensionContext): void {
     const app = await pickApp(arg);
     if (app) {
       await editPreferences(app);
+    }
+  });
+  register('webBoot.createGroup', () => createGroup());
+  register('webBoot.renameGroup', async (arg) => {
+    if (arg instanceof GroupTreeItem) {
+      await renameGroup(arg);
+    }
+  });
+  register('webBoot.deleteGroup', async (arg) => {
+    if (arg instanceof GroupTreeItem) {
+      await deleteGroup(arg);
+    }
+  });
+  register('webBoot.moveAppToGroup', async (arg) => {
+    const app = await pickApp(arg);
+    if (app) {
+      await moveAppToGroup(app);
+    }
+  });
+  register('webBoot.startGroup', async (arg) => {
+    if (arg instanceof GroupTreeItem) {
+      await startGroup(arg);
+    }
+  });
+  register('webBoot.stopGroup', async (arg) => {
+    if (arg instanceof GroupTreeItem) {
+      await stopGroup(arg);
     }
   });
   register('webBoot.debug', async (arg) => {
