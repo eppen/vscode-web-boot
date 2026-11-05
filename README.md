@@ -40,7 +40,7 @@ npm install
 npm run package
 ```
 
-`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.0.vsix`（版本号取自 `package.json`）。安装：
+`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.0.vsix`（版本号取自 `package.json`）。打包插件市场版本时追加 `--readme-path README.marketplace.md`。安装：
 
 ```bash
 cursor --install-extension web-boot-runner-0.1.0.vsix
@@ -242,5 +242,8 @@ D:\work\tools\vscode-web-boot\
 │  ├─ commands/generateLaunchJson.ts
 │  └─ util/ports.ts                端口探测与冲突统计
 ├─ test/                           自检脚本（不打包）
-└─ media/web-boot.svg
+├─ README.marketplace.md           插件市场双语 README
+└─ media/
+   ├─ web-boot.svg
+   └─ ui-overview.png              插件市场界面示意图
 ```
