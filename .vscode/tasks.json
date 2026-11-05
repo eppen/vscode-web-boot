@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm: build",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "build"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "npm: package",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "package"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "npm: selfcheck（需指定仓库根）",
+      "type": "shell",
+      "command": "npm",
+      "args": [
+        "run",
+        "selfcheck",
+        "--",
+        "--root",
+        "${input:repoRoot}"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "repoRoot",
+      "type": "promptString",
+      "description": "mes-parent 仓库根目录",
+      "default": "D:/work/jt-mes/source/mes/mes-parent"
+    }
+  ]
+}

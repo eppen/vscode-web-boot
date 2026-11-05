@@ -1,0 +1,246 @@
+# Web Boot Runner
+
+一个用于 VS Code / Cursor 的 Spring Boot 应用管理扩展：在多模块 Maven 工作区中启动、停止应用，记住 profile 与端口，并在启动前检测端口冲突。
+
+## 解决的问题
+
+多模块仓库里常见的两类坑：
+
+1. **reactor 归属**：不在 reactor 内的模块（`<module>` 被注释掉，或从未在父 POM 中声明）用 `mvn -pl :xxx` 会直接报 `Could not find the selected project in the reactor`。扩展会自动识别并改走 `mvn -f <模块>/pom.xml`。
+2. **profile 与端口**：同一模块常有多个 `application-*.yml`，端口被 profile 覆盖；多个 Web 模块还可能默认共用 8080。扩展按「基础配置 + profile 配置」算出每个 profile 的生效端口，并在启动前检查占用。
+
+## 为什么不用官方 Spring Boot Dashboard
+
+| 对比项 | 官方 `vscjava.vscode-spring-boot-dashboard` | 本扩展 |
+| --- | --- | --- |
+| 启动方式 | `type: java` 直启，依赖 VS Code Java 语言服务器拼 classpath | `mvn spring-boot:run`，classpath 由 Maven 解析 |
+| 多模块 | 依赖语言服务器导入结果，模块多时易 stale | 走 `-pl ... -am`，天然正确 |
+| reactor 外模块 | 失败 | 自动降级为 `-f` |
+| profile | `Run with Profile...` 只往 `vmArgs` 追加，容易被 `launch.json` 的 `args` 压制 | profile 直接写进命令，可在界面里选并记住 |
+| 端口 | 只能读配置 | 读配置 + 冲突检测 + 一键换端口 |
+| 停止 | 有 | 有，且按进程树结束（Windows 用 `taskkill /T /F`） |
+
+如果模块的 `pom.xml` 配置了 `<useClasspathFile>true</useClasspathFile>`（用于规避 Windows 下 `spring-boot:run` 的 classpath 过长，`error=206`），本扩展会复用这条路径。
+
+## 环境要求
+
+| 项 | 说明 |
+| --- | --- |
+| 编辑器 | VS Code 1.75+ 或 Cursor |
+| Maven / JDK | 跟随目标仓库自身的环境；个别模块需要不同版本时，用 `webBoot.javaHome` 覆盖 `JAVA_HOME` |
+| Node.js | 仅构建扩展、运行自检时需要 |
+
+## 安装
+
+本扩展独立于业务仓库，位于 `D:\work\tools\vscode-web-boot`。
+
+```bash
+cd D:\work\tools\vscode-web-boot
+npm install
+npm run package
+```
+
+`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.0.vsix`（版本号取自 `package.json`）。安装：
+
+```bash
+cursor --install-extension web-boot-runner-0.1.0.vsix
+# 或
+code --install-extension web-boot-runner-0.1.0.vsix
+```
+
+开发调试：在 `D:\work\tools\vscode-web-boot` 打开窗口，按 `F5` 选择预置的扩展开发配置，按提示指定目标工作区即可启动 Extension Development Host。
+
+> 扩展本体脱离仓库后，`selfcheck` 系列脚本需要显式指定仓库根（见「自检」）。
+> 扩展运行时仍然以「当前 VS Code 工作区根目录」为扫描目标，与扩展自身所在位置无关。
+
+## 使用
+
+打开包含 `pom.xml` 的工作区根目录后，左侧活动栏出现 **Web Boot** 图标，点开即为应用列表（下图模块名与端口仅为示意）：
+
+```text
+sample-web              dev    :8080   /sample-web
+sample-report-web       dev    :8080   /sample-report
+sample-monitor-server   dev    :9999   /monitor
+```
+
+- 点击节点：未运行则启动，运行中则打开浏览器
+- 悬浮节点出现内联按钮：未运行时为启动 / 调试，运行中为打开 / 停止
+- 右键菜单：选择 Profile 运行、指定端口运行、复制启动命令
+- 标题栏按钮：刷新、检查端口冲突、生成 launch.json、显示输出
+- 底部状态栏：显示应用总数与运行中数量，点击定位到 Web Boot 视图
+- 修改 `pom.xml` 或 `application*.yml` 后自动重新扫描，通常不需要手动刷新
+- 启动前检查端口占用，被占用时可选择自动换端口、仍用该端口或取消
+
+启动过程输出到「Web Boot」输出通道。`=====` 行之后的两行分别是预编译与启动命令，就绪后会打印访问地址：
+
+```text
+===== sample-web  dev  mvn -B -pl :sample-web -am -DskipTests spring-boot:run ... =====
+[1/2] 预编译：mvn -B -pl :sample-web -am -DskipTests compile
+[2/2] 启动：mvn -B -pl :sample-web -am -DskipTests spring-boot:run ...
+[就绪] sample-web 已在 http://localhost:8082/sample-web 启动。
+```
+
+启动完成后，树节点与「打开」动作都以日志里的实际端口为准，而不是配置里的值。
+
+## 命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `Web Boot: 刷新应用列表` | 重新扫描 pom 与 application 配置 |
+| `Web Boot: 运行` | 用记住的 profile / 端口启动 |
+| `Web Boot: 选择 Profile 运行...` | 从该模块的 `application-*.yml` 里选，选完会清掉记住的端口，让新 profile 的 yml 端口生效 |
+| `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
+| `Web Boot: 调试运行（自动 attach）` | 启动加 JDWP，Spring Boot 打出 `Started ...` 后自动 attach |
+| `Web Boot: 停止` | `taskkill /T /F` 结束整棵进程树 |
+| `Web Boot: 在浏览器中打开` | 按 `端口 + context-path` 拼地址 |
+| `Web Boot: 复制启动命令` | 复制到剪贴板，可贴进任意终端 |
+| `Web Boot: 检查端口冲突` | 在输出窗口打印全部应用的有效端口与冲突组 |
+| `Web Boot: 生成 launch.json` | 写 `type: java` 配置到 `.vscode/launch.json`，只替换 `Web Boot: ` 前缀的条目 |
+| `Web Boot: 显示输出窗口` | 打开输出通道 |
+
+## 配置
+
+| 配置项 | 默认 | 说明 |
+| --- | --- | --- |
+| `webBoot.mavenCommand` | `mvn` | Maven 可执行文件 |
+| `webBoot.preBuild` | `compile` | 启动前目标：`none` / `compile` / `package` / `install` |
+| `webBoot.debugPort` | `5005` | JDWP 端口，被占用自动 +1 |
+| `webBoot.runner` | `outputChannel` | `outputChannel` 可检测就绪与停止；`terminal` 仅把命令送进终端 |
+| `webBoot.autoAttach` | `true` | 调试运行时自动 attach |
+| `webBoot.autoOpen` | `false` | 就绪后自动打开浏览器 |
+| `webBoot.javaHome` | 空 | 覆盖启动进程的 `JAVA_HOME` |
+| `webBoot.extraArgs` | `[]` | 追加 JVM 参数，如 `-Xmx2g` |
+
+每个应用的 profile / 端口记在 `.vscode/web-boot.json`。该目录通常已被业务仓库的 `.gitignore` 忽略，属于个人配置。
+
+## 实现要点
+
+### reactor 判定必须先剥离 XML 注释
+
+`pom.xml` 里被 `<!-- -->` 包住的 `<module>` 不是 reactor 成员。直接正则抓 `<module>` 会把被注释的模块误判为 reactor 内，启动时报错。`src/scanner/maven.ts` 先剥离注释再解析，并把注释掉的模块名单独收集，用于树上的提示文案。
+
+### profile 端口按「基础 yml + profile yml 深合并」计算
+
+- 基础文件取 `application.yml` / `application.yaml` / `application.properties`（部分旧模块使用 properties）
+- `application-<profile>.*` 逐个与基础配置深合并，得到该 profile 的生效 `server.port` 与 `server.servlet.context-path`
+- `application.yml` 用 `YAML.parseAllDocuments` 解析：配置里若出现 `---` 多文档，单文档解析会抛错并退化到 8080
+
+### 就绪与失败判定
+
+`src/runner/logParser.ts` 按行解析子进程输出：
+
+- 就绪：`Started Xxx in N seconds`
+- 实际端口：`Tomcat started on port(s): 8080`、`Netty started on port 8090`
+- context-path：`with context path '/sample-web'`
+- 失败：`APPLICATION FAILED TO START`、`BUILD FAILURE`、`Error starting ApplicationContext`
+- 端口占用：`Port 8080 was already in use`、`Address already in use`
+
+### 开发仓库实测
+
+在开发该扩展所用的多模块仓库上运行 `npm run selfcheck`（节选）：
+
+```text
+reactor 模块数: 77
+可启动应用数: 14
+
+mes-web                        8080   /mes-web       eos
+mes-monitor-server             9999   /monitor       dev             [不在 reactor]
+mes-agentscope                 8090   -              eos2            [不在 reactor]
+
+端口冲突组数: 2
+  8080: mes-dispatching-web, mes-platform-web, mes-report-web, mes-web
+  8081: mes-flowable-web, mes-generator-hibernate
+```
+
+该仓库中 `mes-web` 的各 profile 端口：`dev` / `eos2` / `eos3` 为 8082，其余为 8080；多个 Web 模块默认共用 8080。
+
+### 命令形态
+
+reactor 内：
+
+```bash
+mvn -B -pl :sample-web -am -DskipTests spring-boot:run \
+  -Dspring-boot.run.profiles=dev \
+  -Dspring-boot.run.arguments=--server.port=8082 \
+  "-Dspring-boot.run.jvmArguments=-Dspring.devtools.restart.enabled=false"
+```
+
+reactor 外：
+
+```bash
+mvn -B -f sample-monitor-server/pom.xml -DskipTests spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+调试时在 `jvmArguments` 里追加：
+
+```text
+-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005
+```
+
+用 `suspend=n` 是因为「先 attach 再启动」会把整个启动流程挂住；代价是启动阶段的断点可能错过。
+
+## 已知限制
+
+- **终端模式不检测就绪**：`webBoot.runner = terminal` 时只负责把命令送进终端，不会自动 attach；节点会直接显示为运行中，且「停止」不会结束终端里的进程。
+- **中文日志可能乱码**：扩展用 UTF-8 读子进程输出，而 Windows 控制台默认 GBK。就绪检测只依赖 ASCII 的 `Started ... in ... seconds`，不受影响；若输出里中文乱码，改用终端模式或调整系统编码。
+- **不同模块可能需要不同 JDK / Maven**：例如 Boot 3.x 工程（parent 为 `spring-boot-starter-parent`）需要 JDK 17 与 Maven 3.6.3+，与仓库中 JDK 8 / Maven 3.3.9 的模块不同。用本机默认环境跑会报 `PluginIncompatibleException`，需要用 `webBoot.javaHome` 指向对应 JDK，并使用匹配的 Maven。
+- **生成 launch.json 的 java 配置不保证能跑**：reactor 外的模块，VS Code Java 语言服务器可能未导入，`type: java` 直启会失败。这类模块请用本扩展的 `mvn` 路径。
+
+## 自检
+
+扩展已移出仓库，扫描类自检必须告诉它仓库在哪（`--root` 或环境变量 `MES_REPO_ROOT`）：
+
+```bash
+npm run typecheck
+
+# 扫描类：需要仓库根
+npm run selfcheck -- --root D:/work/jt-mes/source/mes/mes-parent
+npm run selfcheck:cmd -- --root D:/work/jt-mes/source/mes/mes-parent
+
+# 与仓库无关，可直接跑
+npm run selfcheck:parse   # 日志解析（就绪 / 端口 / context-path / 失败 / 端口占用）
+npm run selfcheck:proc    # 进程树停止后端口是否真正释放
+```
+
+也可以一次性设好环境变量，然后跑全部：
+
+```powershell
+$env:MES_REPO_ROOT = "D:/work/jt-mes/source/mes/mes-parent"
+npm run selfcheck:all
+```
+
+解析顺序：`--root 参数` > `MES_REPO_ROOT` > 从脚本位置向上查找 > 从当前目录向上查找；都失败时给出带示例的报错。
+
+自检脚本通过 esbuild 把 `vscode` 别名指向 `test/vscode-stub.ts`，因此不需要启动 VS Code 即可验证扫描逻辑。
+
+已做过一次端到端冒烟（`-f` 分支），验证就绪、端口与 context-path 解析，以及停止后端口释放：
+
+```text
+PASS ready line: 2026-11-05 10:14:42 [main] INFO  c.c.p.m.m.MonitorServerApplication - Started MonitorServerApplication in 17.517 seconds
+PASS port line: 2026-11-05 10:14:42 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port(s): 9999 (http) with context path '/monitor'
+PASS port 9999 released
+```
+
+## 目录结构
+
+```text
+D:\work\tools\vscode-web-boot\
+├─ .vscode/                        F5 调试扩展自身（打开目标工作区）
+├─ src/
+│  ├─ extension.ts                 入口：树、命令、状态栏、文件监听
+│  ├─ model/types.ts               领域模型
+│  ├─ scanner/maven.ts             reactor 扫描（剥离 XML 注释）
+│  ├─ scanner/bootApps.ts          @SpringBootApplication 扫描
+│  ├─ scanner/springConfig.ts      profile / 端口 / context-path 解析
+│  ├─ runner/command.ts            mvn 命令生成
+│  ├─ runner/logParser.ts          启动日志解析（就绪 / 端口 / 失败）
+│  ├─ runner/processManager.ts     子进程与进程树停止
+│  ├─ runner/launcher.ts           单应用生命周期
+│  ├─ debug/attach.ts              JDWP attach
+│  ├─ views/appsTreeProvider.ts    侧边栏树
+│  ├─ config/store.ts              .vscode/web-boot.json
+│  ├─ commands/generateLaunchJson.ts
+│  └─ util/ports.ts                端口探测与冲突统计
+├─ test/                           自检脚本（不打包）
+└─ media/web-boot.svg
+```

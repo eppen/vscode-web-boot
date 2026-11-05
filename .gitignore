@@ -1,0 +1,6 @@
+node_modules/
+dist/
+test/.tmp/
+*.vsix
+*.log
+.DS_Store

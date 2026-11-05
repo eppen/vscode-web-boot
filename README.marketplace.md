@@ -1,0 +1,219 @@
+# Web Boot Runner
+
+Run, stop, and debug Spring Boot applications in multi-module Maven workspaces — with reactor-aware commands, profile-aware ports, and port-conflict checks.
+
+**[English](#english) · [简体中文](#简体中文)**
+
+---
+
+## English
+
+### Why this extension
+
+Multi-module Spring Boot repositories usually have two recurring problems:
+
+- **Modules outside the Maven reactor.** A module can be commented out in the parent POM, or never declared at all. `mvn -pl :module` then fails with `Could not find the selected project in the reactor`.
+- **Ports hidden behind profiles.** A single module may have many `application-*.yml` files that override `server.port`, while several web modules default to the same port (commonly 8080).
+
+Web Boot Runner detects both cases and handles them automatically.
+
+### Features
+
+- **Application tree** in the activity bar, showing live status, profile, port, and context path.
+- **One-click run** via `mvn spring-boot:run`, with an optional pre-build step (`compile` by default).
+- **Reactor-aware commands** — uses `-pl :artifact -am` inside the reactor and falls back to `-f <module>/pom.xml` outside it.
+- **Profile-aware ports** — merges the base config with each `application-<profile>.*` file to compute the effective port and context path.
+- **Port-conflict detection** — scans all apps before launch and offers to pick a free port, use the occupied one, or cancel.
+- **Debug with auto-attach** — starts the app with JDWP and attaches after Spring Boot reports ready.
+- **launch.json generation** — writes `type: java` configurations for developers who prefer pressing F5.
+- **Readiness detection** — parses the run log for `Started ... in ... seconds`, the actual port, context path, and common failure messages.
+- **Process-tree stop** — uses `taskkill /T /F` on Windows, so no orphan Java process keeps the port.
+- **Copy launch command** — copies the exact Maven command for use in any terminal.
+
+### Requirements
+
+- VS Code 1.75 or newer (Cursor works as well).
+- Java and Maven available to the extension (`mvn` on `PATH`, or configure `webBoot.mavenCommand`).
+- A workspace whose root contains the Maven `pom.xml`.
+- The extension UI is currently in Chinese.
+
+### Getting started
+
+1. Install **Web Boot Runner** from the Marketplace, or sideload the VSIX:
+
+   ```bash
+   code --install-extension web-boot-runner-0.1.0.vsix
+   ```
+
+2. Open the root of your multi-module project.
+3. Click the **Web Boot** icon in the activity bar.
+
+Example application list:
+
+```text
+order-web              dev    :8080   /order
+report-web             dev    :8080   /report
+monitor-server         dev    :9999   /monitor
+```
+
+- Click a stopped app to run it; click a running app to open it in the browser.
+- Hover a node for inline Run / Debug or Open / Stop buttons.
+- Right-click for profile selection, port override, and command copy.
+- Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output.
+
+### Commands
+
+| Command | Description |
+| --- | --- |
+| `Web Boot: 刷新应用列表` (Refresh) | Rescan POMs and Spring configuration files |
+| `Web Boot: 运行` (Run) | Start with the remembered profile and port |
+| `Web Boot: 选择 Profile 运行...` (Run with Profile) | Pick a profile from the module's `application-*.yml` files; clears the remembered port so the profile's own port applies |
+| `Web Boot: 指定端口运行...` (Run with Port) | Override the port and remember it |
+| `Web Boot: 调试运行（自动 attach）` (Debug) | Start with JDWP and attach automatically after startup |
+| `Web Boot: 停止` (Stop) | End the whole process tree with `taskkill /T /F` |
+| `Web Boot: 在浏览器中打开` (Open) | Build the URL from port and context path |
+| `Web Boot: 复制启动命令` (Copy Command) | Copy the Maven command to the clipboard |
+| `Web Boot: 检查端口冲突` (Check Port Conflicts) | Print every app's effective port and conflict groups in the output channel |
+| `Web Boot: 生成 launch.json` (Generate launch.json) | Write `type: java` entries to `.vscode/launch.json`, replacing only entries prefixed with `Web Boot: ` |
+| `Web Boot: 显示输出窗口` (Show Output) | Open the Web Boot output channel |
+
+### Settings
+
+| Setting | Default | Description |
+| --- | --- | --- |
+| `webBoot.mavenCommand` | `mvn` | Maven executable |
+| `webBoot.preBuild` | `compile` | Pre-build goal: `none` / `compile` / `package` / `install` |
+| `webBoot.debugPort` | `5005` | JDWP port; automatically incremented when occupied |
+| `webBoot.runner` | `outputChannel` | `outputChannel` enables readiness detection and precise stop; `terminal` only sends the command to a terminal |
+| `webBoot.autoAttach` | `true` | Attach automatically when debugging |
+| `webBoot.autoOpen` | `false` | Open the browser automatically when the app is ready |
+| `webBoot.javaHome` | empty | Override `JAVA_HOME` for launched processes |
+| `webBoot.extraArgs` | `[]` | Extra JVM arguments, for example `-Xmx2g` |
+
+Per-app profile and port preferences are stored in `.vscode/web-boot.json` inside the workspace.
+
+### How it works
+
+- Scans `**/src/main/java/**/*Application.java` for classes annotated with `@SpringBootApplication`.
+- Parses POMs with XML comments stripped to build the reactor model; modules outside the reactor use the `-f` form.
+- Deep-merges the base `application.*` file with each `application-<profile>.*` file to resolve the effective `server.port` and `server.servlet.context-path`.
+- Launches `mvn spring-boot:run` and watches the output for `Started ... in ... seconds`; the actual port reported by Tomcat or Netty takes precedence over configuration.
+- Stops the entire process tree, preventing orphan Java processes from holding the port.
+
+### Notes and limitations
+
+- **Terminal mode does not detect readiness.** With `webBoot.runner = terminal`, the node is marked running immediately, auto-attach is unavailable, and Stop does not end the process in the terminal.
+- **Windows console encoding.** Subprocess output is read as UTF-8 while the Windows console often defaults to GBK. Readiness detection relies on ASCII log lines and is unaffected, but Chinese log text may appear garbled; use terminal mode or adjust the system encoding if needed.
+- **Modules may need a different JDK or Maven.** For example, a Boot 3.x module may require JDK 17 and Maven 3.6.3+ while the rest of the repository uses older versions. Point `webBoot.javaHome` at the required JDK and use a matching Maven.
+- **Generated `launch.json` entries are not guaranteed to work.** For modules outside the reactor, the VS Code Java language server may not have imported the project. Use this extension's Maven path for those modules.
+
+### License
+
+Internal project. Use is limited to authorized personnel of the company and this project. Unauthorized copying, distribution, or use in other projects is prohibited.
+
+---
+
+## 简体中文
+
+### 为什么需要它
+
+多模块 Spring Boot 仓库通常有两个反复出现的问题：
+
+- **模块不在 Maven reactor 内。** 模块可能在父 POM 中被注释掉，或从未声明。此时 `mvn -pl :module` 会报 `Could not find the selected project in the reactor`。
+- **端口藏在 profile 里。** 一个模块可能有很多 `application-*.yml` 覆盖 `server.port`，同时多个 Web 模块默认使用同一个端口（通常是 8080）。
+
+Web Boot Runner 会自动识别并处理这两种情况。
+
+### 功能
+
+- **应用树**：活动栏中的列表，直接显示运行状态、profile、端口与 context-path。
+- **一键启动**：通过 `mvn spring-boot:run` 启动，可选预编译步骤（默认 `compile`）。
+- **reactor 感知**：reactor 内使用 `-pl :artifact -am`，reactor 外自动降级为 `-f <模块>/pom.xml`。
+- **profile 端口计算**：将基础配置与每个 `application-<profile>.*` 深合并，算出该 profile 的生效端口与 context-path。
+- **端口冲突检测**：启动前检查全部应用，可自动换端口、仍用该端口或取消。
+- **调试自动 attach**：以 JDWP 启动，Spring Boot 就绪后自动连接调试器。
+- **生成 launch.json**：为习惯按 F5 的开发者写入 `type: java` 配置。
+- **就绪检测**：解析启动日志中的 `Started ... in ... seconds`、实际端口、context-path 与常见失败信息。
+- **按进程树停止**：Windows 下使用 `taskkill /T /F`，避免 Java 子进程残留占用端口。
+- **复制启动命令**：把实际执行的 Maven 命令复制到剪贴板，可贴进任意终端。
+
+### 环境要求
+
+- VS Code 1.75 或更高版本（Cursor 同样可用）。
+- 扩展可访问 Java 与 Maven（`mvn` 在 `PATH` 中，或配置 `webBoot.mavenCommand`）。
+- 工作区根目录包含 Maven 的 `pom.xml`。
+- 扩展界面目前为中文。
+
+### 快速开始
+
+1. 从插件市场安装 **Web Boot Runner**，或离线安装 VSIX：
+
+   ```bash
+   code --install-extension web-boot-runner-0.1.0.vsix
+   ```
+
+2. 打开多模块项目的根目录。
+3. 点击活动栏中的 **Web Boot** 图标。
+
+应用列表示意：
+
+```text
+order-web              dev    :8080   /order
+report-web             dev    :8080   /report
+monitor-server         dev    :9999   /monitor
+```
+
+- 点击未运行的节点启动应用；点击运行中的节点在浏览器打开。
+- 悬浮节点出现内联按钮：启动 / 调试，或打开 / 停止。
+- 右键菜单可选择 Profile、指定端口、复制启动命令。
+- 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出。
+
+### 命令
+
+| 命令 | 说明 |
+| --- | --- |
+| `Web Boot: 刷新应用列表` | 重新扫描 POM 与 Spring 配置文件 |
+| `Web Boot: 运行` | 用记住的 profile 与端口启动 |
+| `Web Boot: 选择 Profile 运行...` | 从模块的 `application-*.yml` 中选择 profile；切换时会清掉记住的端口，让新 profile 的配置生效 |
+| `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
+| `Web Boot: 调试运行（自动 attach）` | 以 JDWP 启动，就绪后自动 attach |
+| `Web Boot: 停止` | 用 `taskkill /T /F` 结束整棵进程树 |
+| `Web Boot: 在浏览器中打开` | 按端口与 context-path 拼接地址 |
+| `Web Boot: 复制启动命令` | 将 Maven 命令复制到剪贴板 |
+| `Web Boot: 检查端口冲突` | 在输出通道打印每个应用的有效端口与冲突组 |
+| `Web Boot: 生成 launch.json` | 写入 `type: java` 配置，只替换以 `Web Boot: ` 开头的条目 |
+| `Web Boot: 显示输出窗口` | 打开 Web Boot 输出通道 |
+
+### 配置
+
+| 配置项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `webBoot.mavenCommand` | `mvn` | Maven 可执行文件 |
+| `webBoot.preBuild` | `compile` | 启动前目标：`none` / `compile` / `package` / `install` |
+| `webBoot.debugPort` | `5005` | JDWP 端口，被占用时自动递增 |
+| `webBoot.runner` | `outputChannel` | `outputChannel` 可检测就绪并精确停止；`terminal` 仅把命令送进终端 |
+| `webBoot.autoAttach` | `true` | 调试运行时自动 attach |
+| `webBoot.autoOpen` | `false` | 就绪后自动打开浏览器 |
+| `webBoot.javaHome` | 空 | 覆盖启动进程的 `JAVA_HOME` |
+| `webBoot.extraArgs` | `[]` | 追加 JVM 参数，例如 `-Xmx2g` |
+
+每个应用的 profile 与端口偏好保存在工作区的 `.vscode/web-boot.json`。
+
+### 实现方式
+
+- 扫描 `**/src/main/java/**/*Application.java` 中带 `@SpringBootApplication` 的启动类。
+- 剥离 POM 中的 XML 注释后构建 reactor 模型；reactor 外的模块使用 `-f` 形式。
+- 将基础 `application.*` 与每个 `application-<profile>.*` 深合并，解析生效的 `server.port` 与 `server.servlet.context-path`。
+- 通过 `mvn spring-boot:run` 启动，并监听日志中的 `Started ... in ... seconds`；Tomcat 或 Netty 报告的实际端口优先于配置值。
+- 停止时结束整棵进程树，避免 Java 子进程残留占用端口。
+
+### 说明与限制
+
+- **终端模式不检测就绪。** `webBoot.runner = terminal` 时节点会直接显示为运行中，无法自动 attach，且「停止」不会结束终端中的进程。
+- **Windows 控制台编码。** 扩展以 UTF-8 读取子进程输出，而 Windows 控制台通常默认 GBK。就绪检测依赖 ASCII 日志，不受影响，但中文日志可能乱码；可改用终端模式或调整系统编码。
+- **不同模块可能需要不同 JDK / Maven。** 例如 Boot 3.x 模块可能需要 JDK 17 与 Maven 3.6.3+，而仓库其余部分使用旧版本。请用 `webBoot.javaHome` 指向所需 JDK，并搭配相应 Maven。
+- **生成的 `launch.json` 不保证能运行。** reactor 外的模块可能未被 VS Code Java 语言服务器导入，`type: java` 直启会失败；这类模块请使用本扩展的 Maven 路径。
+
+### 许可
+
+内部项目，仅限本公司及本项目授权人员使用。未经授权，不得复制、分发或用于其它项目。
