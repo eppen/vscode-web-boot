@@ -247,5 +247,11 @@ D:\work\tools\vscode-web-boot\
 ├─ README.marketplace.md           插件市场双语 README
 └─ media/
    ├─ web-boot.svg
+   ├─ icon.svg                     市场图标源文件
+   ├─ icon.png                     市场图标（256×256）
    └─ ui-overview.png              插件市场界面示意图
 ```
+
+## 许可证
+
+[MIT](LICENSE) © 2026 eppen

@@ -110,7 +110,7 @@ Per-app profile and port preferences are stored in `.vscode/web-boot.json` insid
 
 ### License
 
-Internal project. Use is limited to authorized personnel of the company and this project. Unauthorized copying, distribution, or use in other projects is prohibited.
+[MIT](LICENSE) © 2026 eppen
 
 ---
 
@@ -218,4 +218,4 @@ monitor-server         dev    :9999   /monitor
 
 ### 许可
 
-内部项目，仅限本公司及本项目授权人员使用。未经授权，不得复制、分发或用于其它项目。
+[MIT](LICENSE) © 2026 eppen

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#EEF3F9"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E7EDF5"/>
+      <stop offset="1" stop-color="#D9E2EC"/>
+    </linearGradient>
+    <linearGradient id="play" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22C55E"/>
+      <stop offset="1" stop-color="#15803D"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-25%" width="150%" height="170%">
+      <feDropShadow dx="0" dy="20" stdDeviation="28" flood-color="#0B2A5B" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+
+  <!-- 圆角底板 -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <!-- 浏览器窗口 -->
+  <rect x="212" y="252" width="600" height="520" rx="56" fill="url(#panel)" filter="url(#shadow)"/>
+
+  <!-- 窗口顶栏 -->
+  <path d="M212 308a56 56 0 0 1 56-56h488a56 56 0 0 1 56 56v80H212z" fill="url(#bar)"/>
+  <circle cx="292" cy="322" r="18" fill="#94A3B8"/>
+  <circle cx="352" cy="322" r="18" fill="#94A3B8"/>
+  <circle cx="412" cy="322" r="18" fill="#94A3B8"/>
+  <rect x="476" y="298" width="280" height="48" rx="24" fill="#C3CFDD"/>
+
+  <!-- 运行按钮（圆角三角形） -->
+  <path d="M480 486v180l146-90z" fill="url(#play)" stroke="url(#play)" stroke-width="52" stroke-linejoin="round"/>
+
+  <!-- 运行状态圆点 -->
+  <circle cx="800" cy="760" r="92" fill="#FFFFFF"/>
+  <circle cx="800" cy="760" r="62" fill="#22C55E"/>
+</svg>
