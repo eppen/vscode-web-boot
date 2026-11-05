@@ -20,7 +20,7 @@ Web Boot Runner detects both cases and handles them automatically.
 ### Features
 
 - **Application tree** in the activity bar, showing live status, profile, port, and context path.
-- **Manual groups** — create groups in the tree, drag apps in or out, and start/stop an entire group; group nodes summarize port conflicts among their members.
+- **Manual groups** — create groups in the tree, drag apps in or out, and start/debug/stop an entire group; group nodes summarize port conflicts among their members.
 - **One-click run** via `mvn spring-boot:run`, with an optional pre-build step (`compile` by default).
 - **Reactor-aware commands** — uses `-pl :artifact -am` inside the reactor and falls back to `-f <module>/pom.xml` outside it.
 - **Profile-aware ports** — merges the base config with each `application-<profile>.*` file to compute the effective port and context path.
@@ -60,7 +60,7 @@ monitor-server         dev    :9999   /monitor
 - Click a stopped app to run it; click a running app to open it in the browser.
 - Hover a node for inline Run / Debug / Edit or Open / Stop / Edit buttons.
 - Right-click for profile selection, port override, profile/port/main-class editing, moving apps between groups, and command copy.
-- Drag apps onto a group (or onto the virtual "Ungrouped" bucket) to organize them; group nodes expose start/stop for the whole group.
+- Drag apps onto a group (or onto the virtual "Ungrouped" bucket) to organize them; group nodes expose start/debug/stop for the whole group.
 - Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output, create group.
 
 ### Commands
@@ -75,7 +75,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 新建分组...` (Create Group) | Create a manual group; drag apps into it afterwards |
 | `Web Boot: 重命名分组...` / `删除分组` (Rename / Delete Group) | Rename or delete a group; deleting only ungroups apps |
 | `Web Boot: 移动到分组...` (Move to Group) | Move an app into a group or back to "Ungrouped" |
-| `Web Boot: 启动整组` / `停止整组` (Start / Stop Group) | Start the group's stopped apps in order, or stop its running apps |
+| `Web Boot: 启动整组` / `调试整组` / `停止整组` (Start / Debug / Stop Group) | Start (or debug-start with JDWP) the group's stopped apps in order, or stop its running apps |
 | `Web Boot: 调试运行（自动 attach）` (Debug) | Start with JDWP and attach automatically after startup |
 | `Web Boot: 停止` (Stop) | End the whole process tree with `taskkill /T /F` |
 | `Web Boot: 在浏览器中打开` (Open) | Build the URL from port and context path |
@@ -134,7 +134,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 ### 功能
 
 - **应用树**：活动栏中的列表，直接显示运行状态、profile、端口与 context-path。
-- **手动分组**：在树中新建分组，拖拽应用归类，可整组启动 / 停止；分组标题汇总组内端口冲突。
+- **手动分组**：在树中新建分组，拖拽应用归类，可整组启动 / 调试 / 停止；分组标题汇总组内端口冲突。
 - **一键启动**：通过 `mvn spring-boot:run` 启动，可选预编译步骤（默认 `compile`）。
 - **reactor 感知**：reactor 内使用 `-pl :artifact -am`，reactor 外自动降级为 `-f <模块>/pom.xml`。
 - **profile 端口计算**：将基础配置与每个 `application-<profile>.*` 深合并，算出该 profile 的生效端口与 context-path。
@@ -174,7 +174,7 @@ monitor-server         dev    :9999   /monitor
 - 点击未运行的节点启动应用；点击运行中的节点在浏览器打开。
 - 悬浮节点出现内联按钮：启动 / 调试 / 编辑，或打开 / 停止 / 编辑。
 - 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口 / 主类、移动到分组、复制启动命令。
-- 把应用拖到分组（或虚拟的「未分组」桶）即可归类；分组节点可启动 / 停止整组。
+- 把应用拖到分组（或虚拟的「未分组」桶）即可归类；分组节点可启动 / 调试 / 停止整组。
 - 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出、新建分组。
 
 ### 命令
@@ -189,7 +189,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
 | `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除只解除归类，不删除应用 |
 | `Web Boot: 移动到分组...` | 把应用移入分组或移回「未分组」 |
-| `Web Boot: 启动整组` / `停止整组` | 按顺序启动组内未运行的应用，或停止组内运行中的应用 |
+| `Web Boot: 启动整组` / `调试整组` / `停止整组` | 按顺序启动（或带 JDWP 调试启动）组内未运行的应用，或停止组内运行中的应用 |
 | `Web Boot: 调试运行（自动 attach）` | 以 JDWP 启动，就绪后自动 attach |
 | `Web Boot: 停止` | 用 `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 在浏览器中打开` | 按端口与 context-path 拼接地址 |

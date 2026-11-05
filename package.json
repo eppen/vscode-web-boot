@@ -114,6 +114,12 @@
         "icon": "$(play)"
       },
       {
+        "command": "webBoot.debugGroup",
+        "title": "调试整组",
+        "category": "Web Boot",
+        "icon": "$(debug-alt)"
+      },
+      {
         "command": "webBoot.stopGroup",
         "title": "停止整组",
         "category": "Web Boot",
@@ -197,6 +203,10 @@
           "when": "false"
         },
         {
+          "command": "webBoot.debugGroup",
+          "when": "false"
+        },
+        {
           "command": "webBoot.stopGroup",
           "when": "false"
         },
@@ -277,9 +287,14 @@
           "group": "inline@1"
         },
         {
-          "command": "webBoot.stopGroup",
+          "command": "webBoot.debugGroup",
           "when": "view == webBoot.apps && viewItem == bootGroup",
           "group": "inline@2"
+        },
+        {
+          "command": "webBoot.stopGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "inline@3"
         },
         {
           "command": "webBoot.run",
@@ -342,9 +357,14 @@
           "group": "1_group@1"
         },
         {
-          "command": "webBoot.stopGroup",
+          "command": "webBoot.debugGroup",
           "when": "view == webBoot.apps && viewItem == bootGroup",
           "group": "1_group@2"
+        },
+        {
+          "command": "webBoot.stopGroup",
+          "when": "view == webBoot.apps && viewItem == bootGroup",
+          "group": "1_group@3"
         },
         {
           "command": "webBoot.renameGroup",

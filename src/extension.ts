@@ -547,10 +547,11 @@ async function assignAppsToGroup(appIds: string[], groupName: string | undefined
   );
 }
 
-async function startGroup(item: GroupTreeItem): Promise<void> {
+async function startGroup(item: GroupTreeItem, debug = false): Promise<void> {
   if (!item.groupName) {
     return;
   }
+  const action = debug ? '调试' : '启动';
   if (item.apps.length === 0) {
     void vscode.window.showInformationMessage(`分组「${item.groupName}」还没有应用。`);
     return;
@@ -564,14 +565,14 @@ async function startGroup(item: GroupTreeItem): Promise<void> {
   }
 
   output.appendLine(
-    `[分组] 启动「${item.groupName}」：${toStart.map((a) => a.id).join(', ')}`
+    `[分组] ${action}「${item.groupName}」：${toStart.map((a) => a.id).join(', ')}`
   );
   for (const app of toStart) {
-    const ok = await launch(app);
+    const ok = await launch(app, { debug });
     if (!ok) {
-      output.appendLine(`[分组] ${app.id} 启动未完成，已中止整组启动。`);
+      output.appendLine(`[分组] ${app.id} ${action}未完成，已中止整组${action}。`);
       void vscode.window.showWarningMessage(
-        `分组「${item.groupName}」启动在 ${app.id} 处中止，请查看 Web Boot 输出。`
+        `分组「${item.groupName}」${action}在 ${app.id} 处中止，请查看 Web Boot 输出。`
       );
       return;
     }
@@ -771,6 +772,11 @@ export function activate(context: vscode.ExtensionContext): void {
   register('webBoot.startGroup', async (arg) => {
     if (arg instanceof GroupTreeItem) {
       await startGroup(arg);
+    }
+  });
+  register('webBoot.debugGroup', async (arg) => {
+    if (arg instanceof GroupTreeItem) {
+      await startGroup(arg, true);
     }
   });
   register('webBoot.stopGroup', async (arg) => {
