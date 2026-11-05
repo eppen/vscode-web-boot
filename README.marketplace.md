@@ -60,7 +60,7 @@ monitor-server         dev    :9999   /monitor
 
 - Click a stopped app to run it; click a running app to open it in the browser.
 - Hover a node for inline Run / Debug / Edit or Open / Stop / Restart / Edit buttons.
-- Right-click for profile selection, port override, profile/port/main-class/`-am` editing, moving apps between groups, and command copy.
+- Right-click for profile selection, port override, profile/port/main-class/`-am` editing, moving apps between groups, command copy, and **Reload Resources** on a running app (`mvn process-resources`).
 - Drag apps onto a group (or onto the virtual "Ungrouped" bucket) to organize them; group nodes expose start/debug/stop for the whole group.
 - Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output, create group.
 
@@ -80,6 +80,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 调试运行（自动 attach）` (Debug) | Start with JDWP and attach automatically after startup |
 | `Web Boot: 停止` (Stop) | End the whole process tree with `taskkill /T /F` |
 | `Web Boot: 重启` (Restart) | Stop, then start again with the remembered profile / port / main class / `-am`; a debug run is restarted in debug mode |
+| `Web Boot: 重新加载资源` (Reload Resources) | Run `mvn process-resources` against a running app to copy resource changes into `target/classes`; does not restart the process, and Stop can interrupt it |
 | `Web Boot: 在浏览器中打开` (Open) | Build the URL from port and context path |
 | `Web Boot: 复制启动命令` (Copy Command) | Copy the Maven command to the clipboard |
 | `Web Boot: 检查端口冲突` (Check Port Conflicts) | Print every app's effective port and conflict groups in the output channel |
@@ -182,7 +183,7 @@ monitor-server         dev    :9999   /monitor
 
 - 点击未运行的节点启动应用；点击运行中的节点在浏览器打开。
 - 悬浮节点出现内联按钮：启动 / 调试 / 编辑，或打开 / 停止 / 重启 / 编辑。
-- 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口 / 主类 / `-am`、移动到分组、复制启动命令。
+- 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口 / 主类 / `-am`、移动到分组、复制启动命令；运行中的应用还可「重新加载资源」（`mvn process-resources`）。
 - 把应用拖到分组（或虚拟的「未分组」桶）即可归类；分组节点可启动 / 调试 / 停止整组。
 - 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出、新建分组。
 
@@ -202,6 +203,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 调试运行（自动 attach）` | 以 JDWP 启动，就绪后自动 attach |
 | `Web Boot: 停止` | 用 `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 重启` | 停止后按记住的 profile / 端口 / 主类 / `-am` 重新启动；调试运行的应用仍以调试方式重启 |
+| `Web Boot: 重新加载资源` | 对运行中的应用执行 `mvn process-resources`，把资源改动拷入 `target/classes`；不重启进程，执行中点「停止」可打断 |
 | `Web Boot: 在浏览器中打开` | 按端口与 context-path 拼接地址 |
 | `Web Boot: 复制启动命令` | 将 Maven 命令复制到剪贴板 |
 | `Web Boot: 检查端口冲突` | 在输出通道打印每个应用的有效端口与冲突组 |

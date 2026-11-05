@@ -5,7 +5,7 @@
 import { scanReactor } from '../src/scanner/maven';
 import { scanBootApps } from '../src/scanner/bootApps';
 import { defaultProfile, resolvePort } from '../src/scanner/springConfig';
-import { buildCommandPlan } from '../src/runner/command';
+import { buildCommandPlan, buildProcessResourcesCommand } from '../src/runner/command';
 import { findRepoRoot } from './root';
 import { setScanRoot } from './vscode-stub';
 
@@ -76,6 +76,21 @@ async function main(): Promise<void> {
     console.log('');
     console.log('=== mes-web 关闭 -am ===');
     console.log(`  ${noAmPlan.runLine}`);
+
+    console.log('');
+    console.log('=== mes-web process-resources ===');
+    console.log(
+      `  含 -am: ${buildProcessResourcesCommand(
+        { app, profile: defaultProf, mainClass: app.mainClass, debug: false },
+        opts
+      )}`
+    );
+    console.log(
+      `  无 -am: ${buildProcessResourcesCommand(
+        { app, profile: defaultProf, mainClass: app.mainClass, debug: false },
+        { ...opts, buildDependencies: false }
+      )}`
+    );
   }
 }
 

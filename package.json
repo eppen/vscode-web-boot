@@ -144,6 +144,12 @@
         "icon": "$(debug-restart)"
       },
       {
+        "command": "webBoot.processResources",
+        "title": "重新加载资源",
+        "category": "Web Boot",
+        "icon": "$(files)"
+      },
+      {
         "command": "webBoot.open",
         "title": "在浏览器中打开",
         "category": "Web Boot",
@@ -226,6 +232,10 @@
         },
         {
           "command": "webBoot.restart",
+          "when": "false"
+        },
+        {
+          "command": "webBoot.processResources",
           "when": "false"
         },
         {
@@ -370,6 +380,11 @@
           "command": "webBoot.moveAppToGroup",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "2_tools@3"
+        },
+        {
+          "command": "webBoot.processResources",
+          "when": "view == webBoot.apps && viewItem == bootApp.running",
+          "group": "2_tools@4"
         },
         {
           "command": "webBoot.startGroup",

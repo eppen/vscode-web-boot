@@ -10,7 +10,7 @@ import * as vscode from 'vscode';
 import type { AppRuntime, BootApp, LaunchSpec } from '../model/types';
 import { defaultProfile, resolveContextPath, resolvePort } from '../scanner/springConfig';
 import { attachToApp } from '../debug/attach';
-import { buildCommandPlan, buildUrl } from './command';
+import { buildCommandPlan, buildProcessResourcesCommand, buildUrl } from './command';
 import { parseBootLogLine } from './logParser';
 import { MetricsMonitor } from './monitor';
 import { spawnManaged, type ManagedProcess } from './processManager';
@@ -25,6 +25,8 @@ export class BootRunner implements vscode.Disposable {
   private readonly buildProcesses = new Map<string, ManagedProcess>();
   /** 已被用户取消启动的应用 */
   private readonly cancelled = new Set<string>();
+  /** 正在执行 process-resources 的应用，避免重复触发 */
+  private readonly resourcesRunning = new Set<string>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly emitter = new vscode.EventEmitter<string>();
   private readonly monitor = new MetricsMonitor();
@@ -307,6 +309,52 @@ export class BootRunner implements vscode.Disposable {
     }
     if (url && opts.autoOpen) {
       void vscode.env.openExternal(vscode.Uri.parse(url));
+    }
+  }
+
+  /**
+   * 对运行中的应用执行 mvn process-resources，把 resources 下的改动拷入 target/classes。
+   * 复用 runTracked，执行期间点「停止」会连同该 Maven 进程一起结束。
+   */
+  async processResources(app: BootApp, spec: LaunchSpec): Promise<boolean> {
+    if (this.resourcesRunning.has(app.id)) {
+      void vscode.window.showWarningMessage(`${app.id} 正在重新加载资源，请稍候。`);
+      return false;
+    }
+
+    const cfg = vscode.workspace.getConfiguration('webBoot');
+    const javaHome = cfg.get<string>('javaHome', '').trim();
+    const command = buildProcessResourcesCommand(spec, {
+      mavenCommand: cfg.get<string>('mavenCommand', 'mvn'),
+      preBuild: 'none',
+      extraJvmArgs: [],
+      buildDependencies: spec.buildDependencies ?? cfg.get<boolean>('buildDependencies', true)
+    });
+
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (javaHome) {
+      env.JAVA_HOME = javaHome;
+    }
+
+    this.logSection(`${app.id}  重新加载资源  ${command}`);
+    this.resourcesRunning.add(app.id);
+    try {
+      const code = await this.runTracked(app.id, command, env);
+      if (code === 0) {
+        this.log(`[资源] ${app.id} 资源已更新。`);
+        return true;
+      }
+      if (this.cancelled.has(app.id)) {
+        this.log(`[资源] ${app.id} 资源重载被停止。`);
+      } else {
+        this.log(`[失败] process-resources 退出码 ${code}。`);
+        void vscode.window.showErrorMessage(
+          `${app.id} 重新加载资源失败（退出码 ${code}），详见 Web Boot 输出。`
+        );
+      }
+      return false;
+    } finally {
+      this.resourcesRunning.delete(app.id);
     }
   }
 

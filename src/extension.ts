@@ -659,6 +659,30 @@ async function stopApp(app: BootApp): Promise<void> {
   updateStatusBar();
 }
 
+/** 对运行中的应用执行 mvn process-resources，重新拷贝资源 */
+async function reloadResources(app: BootApp): Promise<void> {
+  if (runner.getRuntime(app.id).state !== 'running') {
+    void vscode.window.showWarningMessage(`${app.id} 未在运行，请先启动后再重新加载资源。`);
+    return;
+  }
+  const pref = store.get(app.id);
+  const profile = resolveProfile(app, pref);
+  const spec: LaunchSpec = {
+    app,
+    profile,
+    port: resolvePortValue(app, profile, pref),
+    mainClass: pref.mainClass || app.mainClass,
+    buildDependencies: pref.buildDependencies,
+    debug: false
+  };
+  const ok = await runner.processResources(app, spec);
+  if (ok) {
+    void vscode.window.showInformationMessage(
+      `${app.id} 资源已更新（mvn process-resources）。若未启用 devtools，应用不会自动重启，可右键「重启」。`
+    );
+  }
+}
+
 /** 重启：先停止（若在运行），再按记住的配置启动；调试运行的应用仍以调试方式重启 */
 async function restartApp(app: BootApp): Promise<void> {
   const runtime = runner.getRuntime(app.id);
@@ -879,6 +903,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const app = await pickApp(arg);
     if (app) {
       await restartApp(app);
+    }
+  });
+  register('webBoot.processResources', async (arg) => {
+    const app = await pickApp(arg);
+    if (app) {
+      await reloadResources(app);
     }
   });
   register('webBoot.open', async (arg) => {

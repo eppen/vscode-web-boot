@@ -59,10 +59,9 @@ function buildJvmArgs(spec: LaunchSpec, extra: string[]): string[] {
   return args;
 }
 
-export function buildCommandPlan(spec: LaunchSpec, opts: BuildOptions): CommandPlan {
+/** 通用 Maven 参数：批处理、模块选择、跳过测试 */
+function buildCommonArgs(spec: LaunchSpec, opts: BuildOptions): string[] {
   const { app } = spec;
-  const mvn = opts.mavenCommand || 'mvn';
-
   const moduleSelector = ['-pl', `:${app.id.split('#')[0]}`];
   const selector = app.inReactor
     ? opts.buildDependencies === false
@@ -70,8 +69,12 @@ export function buildCommandPlan(spec: LaunchSpec, opts: BuildOptions): CommandP
       : [...moduleSelector, '-am']
     : // 统一用正斜杠：Windows cmd 与 bash 都接受，便于复制命令到任意终端
       ['-f', `${app.relDir}/pom.xml`];
+  return ['-B', ...selector, '-DskipTests'];
+}
 
-  const common = ['-B', ...selector, '-DskipTests'];
+export function buildCommandPlan(spec: LaunchSpec, opts: BuildOptions): CommandPlan {
+  const mvn = opts.mavenCommand || 'mvn';
+  const common = buildCommonArgs(spec, opts);
 
   const plan: CommandPlan = {
     run: [],
@@ -104,6 +107,15 @@ export function buildCommandPlan(spec: LaunchSpec, opts: BuildOptions): CommandP
   plan.run = run;
   plan.runLine = renderCommand(run);
   return plan;
+}
+
+/**
+ * 对运行中的应用重新拷贝资源：mvn process-resources。
+ * 模块选择与 -am 开关和启动命令保持一致。
+ */
+export function buildProcessResourcesCommand(spec: LaunchSpec, opts: BuildOptions): string {
+  const mvn = opts.mavenCommand || 'mvn';
+  return renderCommand([mvn, ...buildCommonArgs(spec, opts), 'process-resources']);
 }
 
 /** 计算访问地址 */

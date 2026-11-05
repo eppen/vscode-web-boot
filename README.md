@@ -67,6 +67,7 @@ sample-monitor-server   dev    :9999   /monitor
 - 悬浮节点出现内联按钮：未运行时为启动 / 调试，运行中为打开 / 停止 / 重启
 - 悬浮运行中的节点也会出现编辑按钮，随时调整下次启动的 profile / 端口 / 主类 / `-am`
 - 右键菜单：选择 Profile 运行、指定端口运行、编辑 Profile / 端口 / 主类 / `-am`、移动到分组、复制启动命令
+- 运行中的应用右键可「重新加载资源」，执行 `mvn process-resources` 把资源的改动拷入 `target/classes`，不重启进程
 - 标题栏按钮：刷新、检查端口冲突、生成 launch.json、显示输出、新建分组
 - 分组：手动创建分组后，把应用拖进分组即可归类；拖到「未分组」移出。分组标题显示应用数与端口冲突组数，右键或内联按钮可启动 / 调试 / 停止整组
 - 底部状态栏：显示应用总数与运行中数量，点击定位到 Web Boot 视图
@@ -102,6 +103,7 @@ sample-monitor-server   dev    :9999   /monitor
 | `Web Boot: 调试运行（自动 attach）` | 启动加 JDWP，Spring Boot 打出 `Started ...` 后自动 attach |
 | `Web Boot: 停止` | `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 重启` | 停止后按记住的 profile / 端口 / 主类 / `-am` 重新启动；调试运行的应用仍以调试方式重启 |
+| `Web Boot: 重新加载资源` | 对运行中的应用执行 `mvn process-resources`，把资源改动拷入 `target/classes`；不重启进程，执行中点「停止」可打断 |
 | `Web Boot: 在浏览器中打开` | 按 `端口 + context-path` 拼地址 |
 | `Web Boot: 复制启动命令` | 复制到剪贴板，可贴进任意终端 |
 | `Web Boot: 检查端口冲突` | 在输出窗口打印全部应用的有效端口与冲突组 |
@@ -177,6 +179,12 @@ sample-monitor-server   dev    :9999   /monitor
 - 若应用暴露了 Actuator，额外请求 `/actuator/metrics/tomcat.threads.busy` 与 `tomcat.threads.config.max`，显示 Tomcat 线程池占用。
 
 采集失败只在悬浮提示里注明原因，不会弹窗或中断应用。
+
+### process-resources 与 devtools
+
+「重新加载资源」只执行 `mvn ... process-resources`，模块选择与 `-am` 开关和启动命令一致。扩展默认在 `spring-boot.run.jvmArguments` 里加了 `-Dspring.devtools.restart.enabled=false`，所以拷贝完资源后应用不会自动重启，需要手动「重启」才能生效。
+
+如果希望资源变化触发 devtools 热重启，在 `webBoot.extraArgs` 里加 `-Dspring.devtools.restart.enabled=true` —— extraArgs 排在默认参数之后，同名的 JVM 系统属性以最后一个为准。
 
 ### 开发仓库实测
 
