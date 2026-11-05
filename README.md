@@ -84,6 +84,8 @@ sample-monitor-server   dev    :9999   /monitor
 
 启动完成后，树节点与「打开」动作都以日志里的实际端口为准，而不是配置里的值。
 
+运行中的应用每 5 秒刷新一次监控：树节点追加 `堆 34% · HTTP 200 8ms`（Actuator 可用时显示为 `Tomcat 5/200`），悬浮提示里能看到堆用量、YGC/FGC 次数与耗时、Tomcat 响应状态及线程池。监控只读，不会影响应用进程。
+
 ## 命令
 
 | 命令 | 说明 |
@@ -113,6 +115,7 @@ sample-monitor-server   dev    :9999   /monitor
 | `webBoot.mavenCommand` | `mvn` | Maven 可执行文件 |
 | `webBoot.preBuild` | `compile` | 启动前目标：`none` / `compile` / `package` / `install` |
 | `webBoot.buildDependencies` | `true` | reactor 内是否追加 `-am`（同时构建依赖模块）。关闭后只构建目标模块，依赖需已 `install` 到本地仓库 |
+| `webBoot.monitor` | `true` | 启动成功后每 5 秒采集 JVM 堆/GC 与 Tomcat HTTP 状态，显示在树节点与悬浮提示中 |
 | `webBoot.debugPort` | `5005` | JDWP 端口，被占用自动 +1 |
 | `webBoot.runner` | `outputChannel` | `outputChannel` 可检测就绪与停止；`terminal` 仅把命令送进终端 |
 | `webBoot.autoAttach` | `true` | 调试运行时自动 attach |
@@ -164,6 +167,16 @@ sample-monitor-server   dev    :9999   /monitor
 - context-path：`with context path '/sample-web'`
 - 失败：`APPLICATION FAILED TO START`、`BUILD FAILURE`、`Error starting ApplicationContext`
 - 端口占用：`Port 8080 was already in use`、`Address already in use`
+
+### 运行时监控
+
+启动就绪后每 5 秒采集一次，结果只写运行期状态，不落盘：
+
+- JVM：先用 `jps -l` 按主类找到真正的 Java 进程（`mvn` 的 pid 是 shell，不是 JVM），再用 `jstat -gc` 读堆使用量与 YGC/FGC。
+- Tomcat：对访问地址发 `HEAD` 请求，任何 HTTP 响应（含 401/404/405）都视为存活，并记录响应耗时。
+- 若应用暴露了 Actuator，额外请求 `/actuator/metrics/tomcat.threads.busy` 与 `tomcat.threads.config.max`，显示 Tomcat 线程池占用。
+
+采集失败只在悬浮提示里注明原因，不会弹窗或中断应用。
 
 ### 开发仓库实测
 
@@ -222,6 +235,9 @@ reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变
 - **中文日志可能乱码**：扩展用 UTF-8 读子进程输出，而 Windows 控制台默认 GBK。就绪检测只依赖 ASCII 的 `Started ... in ... seconds`，不受影响；若输出里中文乱码，改用终端模式或调整系统编码。
 - **不同模块可能需要不同 JDK / Maven**：例如 Boot 3.x 工程（parent 为 `spring-boot-starter-parent`）需要 JDK 17 与 Maven 3.6.3+，与仓库中 JDK 8 / Maven 3.3.9 的模块不同。用本机默认环境跑会报 `PluginIncompatibleException`，需要用 `webBoot.javaHome` 指向对应 JDK，并使用匹配的 Maven。
 - **生成 launch.json 的 java 配置不保证能跑**：reactor 外的模块，VS Code Java 语言服务器可能未导入，`type: java` 直启会失败。这类模块请用本扩展的 `mvn` 路径。
+- **监控依赖 JDK 工具**：`jps` / `jstat` 随 JDK 提供；只有 JRE 时 JVM 指标显示「监控不可用」，Tomcat HTTP 状态仍可显示。
+- **Actuator 指标使用默认路径**：自定义 `management.server.port` 或 `management.endpoints.web.base-path` 时，Tomcat 线程池不会显示，但 HTTP 探活不受影响。
+- **终端模式不监控**：`webBoot.runner = terminal` 时拿不到 Java 进程，也不会采集 JVM / Tomcat 指标。
 
 ## 自检
 
@@ -236,6 +252,7 @@ npm run selfcheck:cmd -- --root D:/work/jt-mes/source/mes/mes-parent
 
 # 与仓库无关，可直接跑
 npm run selfcheck:parse   # 日志解析（就绪 / 端口 / context-path / 失败 / 端口占用）
+npm run selfcheck:monitor # jstat / Actuator 指标解析
 npm run selfcheck:proc    # 进程树停止后端口是否真正释放
 ```
 
@@ -273,6 +290,7 @@ D:\work\tools\vscode-web-boot\
 │  ├─ runner/logParser.ts          启动日志解析（就绪 / 端口 / 失败）
 │  ├─ runner/processManager.ts     子进程与进程树停止
 │  ├─ runner/launcher.ts           单应用生命周期
+│  ├─ runner/monitor.ts            JVM / Tomcat 运行期监控
 │  ├─ debug/attach.ts              JDWP attach
 │  ├─ views/appsTreeProvider.ts    侧边栏树
 │  ├─ config/store.ts              .vscode/web-boot.json

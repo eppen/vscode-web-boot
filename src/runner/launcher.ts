@@ -12,6 +12,7 @@ import { defaultProfile, resolveContextPath, resolvePort } from '../scanner/spri
 import { attachToApp } from '../debug/attach';
 import { buildCommandPlan, buildUrl } from './command';
 import { parseBootLogLine } from './logParser';
+import { MetricsMonitor } from './monitor';
 import { spawnManaged, type ManagedProcess } from './processManager';
 import { findFreePort } from '../util/ports';
 
@@ -26,6 +27,7 @@ export class BootRunner implements vscode.Disposable {
   private readonly cancelled = new Set<string>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly emitter = new vscode.EventEmitter<string>();
+  private readonly monitor = new MetricsMonitor();
 
   /** 应用状态变化事件，参数为 appId */
   readonly onDidChangeState = this.emitter.event;
@@ -33,7 +35,9 @@ export class BootRunner implements vscode.Disposable {
   constructor(
     private readonly root: string,
     private readonly output: vscode.OutputChannel
-  ) {}
+  ) {
+    this.monitor.onDidUpdate(({ appId, metrics }) => this.update(appId, { metrics }));
+  }
 
   getRuntime(appId: string): AppRuntime {
     let rt = this.runtimes.get(appId);
@@ -98,6 +102,7 @@ export class BootRunner implements vscode.Disposable {
     const autoAttach = cfg.get<boolean>('autoAttach', true);
     const autoOpen = cfg.get<boolean>('autoOpen', false);
     const javaHome = cfg.get<string>('javaHome', '').trim();
+    const monitorEnabled = cfg.get<boolean>('monitor', true);
 
     // 调试端口避让
     let debugPort: number | undefined;
@@ -156,7 +161,10 @@ export class BootRunner implements vscode.Disposable {
       debugPort,
       autoAttach,
       autoOpen,
-      fallbackContextPath: contextPath
+      fallbackContextPath: contextPath,
+      monitor: monitorEnabled
+        ? { javaHome, mainClass: finalSpec.mainClass ?? app.mainClass }
+        : undefined
     });
   }
 
@@ -170,6 +178,8 @@ export class BootRunner implements vscode.Disposable {
       autoAttach: boolean;
       autoOpen: boolean;
       fallbackContextPath: string;
+      /** 运行期 JVM / Tomcat 监控配置；undefined 表示关闭 */
+      monitor?: { javaHome: string; mainClass: string };
     }
   ): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
@@ -233,6 +243,14 @@ export class BootRunner implements vscode.Disposable {
             });
             this.log(`[就绪] ${app.id} 已在 http://localhost:${port}${detectedContextPath} 启动。`);
 
+            if (opts.monitor) {
+              this.monitor.start(app.id, {
+                mainClass: opts.monitor.mainClass,
+                url: buildUrl(port, detectedContextPath),
+                javaHome: opts.monitor.javaHome
+              });
+            }
+
             const timer = this.timers.get(app.id);
             if (timer) {
               clearTimeout(timer);
@@ -250,8 +268,9 @@ export class BootRunner implements vscode.Disposable {
             this.timers.delete(app.id);
           }
           this.processes.delete(app.id);
+          this.monitor.stop(app.id);
           this.log(`[退出] ${app.id} 进程结束（退出码 ${code ?? 'unknown'}）。`);
-          this.update(app.id, { state: 'stopped', pid: undefined });
+          this.update(app.id, { state: 'stopped', pid: undefined, metrics: undefined });
 
           if (!ready && !settled) {
             const reason = sawFailure ? '启动失败' : '进程已退出';
@@ -306,6 +325,7 @@ export class BootRunner implements vscode.Disposable {
 
   /** 停止一个应用（结束整棵进程树，含预编译阶段） */
   async stop(appId: string): Promise<void> {
+    this.monitor.stop(appId);
     this.cancelled.add(appId);
 
     const build = this.buildProcesses.get(appId);
@@ -317,14 +337,14 @@ export class BootRunner implements vscode.Disposable {
 
     const proc = this.processes.get(appId);
     if (!proc) {
-      this.update(appId, { state: 'stopped', pid: undefined });
+      this.update(appId, { state: 'stopped', pid: undefined, metrics: undefined });
       return;
     }
     this.update(appId, { state: 'stopping' });
     this.log(`[停止] 正在结束 ${appId}（pid ${proc.pid}）...`);
     await proc.stop();
     this.processes.delete(appId);
-    this.update(appId, { state: 'stopped', pid: undefined });
+    this.update(appId, { state: 'stopped', pid: undefined, metrics: undefined });
     this.log(`[停止] ${appId} 已结束。`);
   }
 
@@ -358,6 +378,7 @@ export class BootRunner implements vscode.Disposable {
       clearTimeout(timer);
     }
     this.timers.clear();
+    this.monitor.dispose();
     this.emitter.dispose();
   }
 }

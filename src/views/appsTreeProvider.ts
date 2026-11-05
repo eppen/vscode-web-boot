@@ -6,7 +6,7 @@
  * 端口冲突用警告图标提示（本仓库四个 web 模块默认都是 8080）。
  */
 import * as vscode from 'vscode';
-import type { AppGroup, AppPreference, AppRuntime, BootApp } from '../model/types';
+import type { AppGroup, AppMetrics, AppPreference, AppRuntime, BootApp } from '../model/types';
 import type { PortConflict } from '../util/ports';
 import { buildUrl } from '../runner/command';
 
@@ -50,6 +50,10 @@ export class AppTreeItem extends vscode.TreeItem {
       parts.push('运行中');
     } else if (runtime.state === 'starting' || runtime.state === 'stopping') {
       parts.push(stateText);
+    }
+    const metricsSummary = formatMetricsSummary(runtime.metrics);
+    if (metricsSummary) {
+      parts.push(metricsSummary);
     }
     this.description = parts.join('  ');
 
@@ -125,6 +129,7 @@ function buildTooltip(
     md.appendMarkdown(`- 可用 profile：${app.config.profiles.filter((p) => p).join(', ')}\n`);
   }
   md.appendMarkdown(`- 状态：${STATE_LABEL[runtime.state] ?? runtime.state}\n`);
+  appendMetricsTooltip(md, runtime.metrics);
   if (runtime.pid) {
     md.appendMarkdown(`- pid：\`${runtime.pid}\`\n`);
   }
@@ -135,6 +140,78 @@ function buildTooltip(
     md.appendMarkdown(`\n启动命令：\n\n\`\`\`\n${runtime.lastCommand}\n\`\`\`\n`);
   }
   return md;
+}
+
+function formatMb(kilobytes: number): string {
+  return `${(kilobytes / 1024).toFixed(0)}M`;
+}
+
+/** 树节点上的紧凑指标：堆 34% · HTTP 200 8ms，或 Tomcat 5/200 */
+function formatMetricsSummary(metrics?: AppMetrics): string | undefined {
+  if (!metrics) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (metrics.jvm?.heapUsedPercent !== undefined) {
+    parts.push(`堆 ${Math.round(metrics.jvm.heapUsedPercent)}%`);
+  }
+  const tomcat = metrics.tomcat;
+  if (tomcat) {
+    if (!tomcat.ok) {
+      parts.push('HTTP 不可达');
+    } else if (tomcat.busyThreads !== undefined && tomcat.maxThreads !== undefined) {
+      parts.push(
+        `Tomcat ${Math.round(tomcat.busyThreads)}/${Math.round(tomcat.maxThreads)}`
+      );
+    } else {
+      parts.push(`HTTP ${tomcat.status ?? '?'} ${tomcat.latencyMs}ms`);
+    }
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
+function appendMetricsTooltip(md: vscode.MarkdownString, metrics?: AppMetrics): void {
+  if (!metrics) {
+    return;
+  }
+  if (metrics.jvm) {
+    const jvm = metrics.jvm;
+    const heap =
+      jvm.heapUsedK !== undefined && jvm.heapCommittedK !== undefined
+        ? `堆 ${formatMb(jvm.heapUsedK)} / ${formatMb(jvm.heapCommittedK)}${
+            jvm.heapUsedPercent !== undefined
+              ? `（${Math.round(jvm.heapUsedPercent)}%）`
+              : ''
+          }`
+        : '已连接';
+    const gc =
+      jvm.ygc !== undefined
+        ? `；YGC ${jvm.ygc} 次 / ${(jvm.ygct ?? 0).toFixed(2)}s，FGC ${
+            jvm.fgc ?? 0
+          } 次 / ${(jvm.fgct ?? 0).toFixed(2)}s`
+        : '';
+    md.appendMarkdown(`- JVM：${heap}${gc}\n`);
+  } else if (metrics.jvmError) {
+    md.appendMarkdown(`- JVM：监控不可用（${metrics.jvmError}）\n`);
+  }
+  if (metrics.tomcat) {
+    const tomcat = metrics.tomcat;
+    const http = tomcat.ok
+      ? `HTTP ${tomcat.status ?? '?'}，${tomcat.latencyMs}ms`
+      : `不可达${tomcat.error ? `（${tomcat.error}）` : ''}`;
+    const threads =
+      tomcat.busyThreads !== undefined
+        ? `；线程 ${Math.round(tomcat.busyThreads)}${
+            tomcat.maxThreads !== undefined
+              ? `/${Math.round(tomcat.maxThreads)}`
+              : ''
+          }`
+        : '';
+    md.appendMarkdown(`- Tomcat：${http}${threads}\n`);
+  }
+  md.appendMarkdown(
+    `- 监控更新：${new Date(metrics.updatedAt).toLocaleTimeString()}\n`
+  );
 }
 
 function buildGroupTooltip(

@@ -28,6 +28,7 @@ Web Boot Runner detects both cases and handles them automatically.
 - **Debug with auto-attach** — starts the app with JDWP and attaches after Spring Boot reports ready.
 - **launch.json generation** — writes `type: java` configurations for developers who prefer pressing F5.
 - **Readiness detection** — parses the run log for `Started ... in ... seconds`, the actual port, context path, and common failure messages.
+- **Runtime monitoring** — after startup, refreshes JVM heap/GC (via `jstat`) and Tomcat HTTP status every 5 seconds in the tree and tooltip; shows Tomcat thread-pool metrics when Actuator is available.
 - **Process-tree stop** — uses `taskkill /T /F` on Windows, so no orphan Java process keeps the port.
 - **Copy launch command** — copies the exact Maven command for use in any terminal.
 
@@ -92,6 +93,7 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.mavenCommand` | `mvn` | Maven executable |
 | `webBoot.preBuild` | `compile` | Pre-build goal: `none` / `compile` / `package` / `install` |
 | `webBoot.buildDependencies` | `true` | Append `-am` inside the reactor (also build dependency modules). Disable to build only the target module; its dependencies must already be installed locally |
+| `webBoot.monitor` | `true` | Sample JVM heap/GC and Tomcat HTTP status every 5 seconds while running; shown in the tree and tooltip |
 | `webBoot.debugPort` | `5005` | JDWP port; automatically incremented when occupied |
 | `webBoot.runner` | `outputChannel` | `outputChannel` enables readiness detection and precise stop; `terminal` only sends the command to a terminal |
 | `webBoot.autoAttach` | `true` | Attach automatically when debugging |
@@ -107,6 +109,7 @@ Per-app preferences (profile, port, main class, `buildDependencies`) and manual 
 - Parses POMs with XML comments stripped to build the reactor model; modules outside the reactor use the `-f` form.
 - Deep-merges the base `application.*` file with each `application-<profile>.*` file to resolve the effective `server.port` and `server.servlet.context-path`.
 - Launches `mvn spring-boot:run` and watches the output for `Started ... in ... seconds`; the actual port reported by Tomcat or Netty takes precedence over configuration.
+- While running, locates the Java process via `jps -l` (the Maven pid is a shell, not the JVM), reads heap and GC with `jstat -gc`, probes the app with HTTP `HEAD`, and optionally reads Tomcat thread-pool metrics from Actuator.
 - Stops the entire process tree, preventing orphan Java processes from holding the port.
 
 ### Notes and limitations
@@ -115,6 +118,9 @@ Per-app preferences (profile, port, main class, `buildDependencies`) and manual 
 - **Windows console encoding.** Subprocess output is read as UTF-8 while the Windows console often defaults to GBK. Readiness detection relies on ASCII log lines and is unaffected, but Chinese log text may appear garbled; use terminal mode or adjust the system encoding if needed.
 - **Modules may need a different JDK or Maven.** For example, a Boot 3.x module may require JDK 17 and Maven 3.6.3+ while the rest of the repository uses older versions. Point `webBoot.javaHome` at the required JDK and use a matching Maven.
 - **Generated `launch.json` entries are not guaranteed to work.** For modules outside the reactor, the VS Code Java language server may not have imported the project. Use this extension's Maven path for those modules.
+- **Monitoring needs JDK tools.** `jps` / `jstat` ship with the JDK; with a JRE only, JVM metrics show as unavailable while the Tomcat HTTP status still works.
+- **Actuator metrics use the default path.** A custom `management.server.port` or `management.endpoints.web.base-path` disables the thread-pool display; HTTP probing is unaffected.
+- **Terminal mode has no monitoring.** With `webBoot.runner = terminal`, the Java process is unknown and no JVM / Tomcat metrics are collected.
 
 ### License
 
@@ -144,6 +150,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 - **调试自动 attach**：以 JDWP 启动，Spring Boot 就绪后自动连接调试器。
 - **生成 launch.json**：为习惯按 F5 的开发者写入 `type: java` 配置。
 - **就绪检测**：解析启动日志中的 `Started ... in ... seconds`、实际端口、context-path 与常见失败信息。
+- **运行期监控**：启动后每 5 秒刷新 JVM 堆/GC（`jstat`）与 Tomcat HTTP 状态，显示在树节点与悬浮提示；应用暴露 Actuator 时还会显示 Tomcat 线程池。
 - **按进程树停止**：Windows 下使用 `taskkill /T /F`，避免 Java 子进程残留占用端口。
 - **复制启动命令**：把实际执行的 Maven 命令复制到剪贴板，可贴进任意终端。
 
@@ -208,6 +215,7 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.mavenCommand` | `mvn` | Maven 可执行文件 |
 | `webBoot.preBuild` | `compile` | 启动前目标：`none` / `compile` / `package` / `install` |
 | `webBoot.buildDependencies` | `true` | reactor 内是否追加 `-am`（同时构建依赖模块）。关闭后只构建目标模块，依赖需已安装到本地仓库 |
+| `webBoot.monitor` | `true` | 运行中每 5 秒采集 JVM 堆/GC 与 Tomcat HTTP 状态，显示在树节点与悬浮提示 |
 | `webBoot.debugPort` | `5005` | JDWP 端口，被占用时自动递增 |
 | `webBoot.runner` | `outputChannel` | `outputChannel` 可检测就绪并精确停止；`terminal` 仅把命令送进终端 |
 | `webBoot.autoAttach` | `true` | 调试运行时自动 attach |
@@ -223,6 +231,7 @@ monitor-server         dev    :9999   /monitor
 - 剥离 POM 中的 XML 注释后构建 reactor 模型；reactor 外的模块使用 `-f` 形式。
 - 将基础 `application.*` 与每个 `application-<profile>.*` 深合并，解析生效的 `server.port` 与 `server.servlet.context-path`。
 - 通过 `mvn spring-boot:run` 启动，并监听日志中的 `Started ... in ... seconds`；Tomcat 或 Netty 报告的实际端口优先于配置值。
+- 运行中通过 `jps -l` 定位 Java 进程（Maven 的 pid 是 shell，不是 JVM），用 `jstat -gc` 读取堆与 GC，向应用发 HTTP `HEAD` 探活，并在 Actuator 可用时读取 Tomcat 线程池。
 - 停止时结束整棵进程树，避免 Java 子进程残留占用端口。
 
 ### 说明与限制
@@ -231,6 +240,9 @@ monitor-server         dev    :9999   /monitor
 - **Windows 控制台编码。** 扩展以 UTF-8 读取子进程输出，而 Windows 控制台通常默认 GBK。就绪检测依赖 ASCII 日志，不受影响，但中文日志可能乱码；可改用终端模式或调整系统编码。
 - **不同模块可能需要不同 JDK / Maven。** 例如 Boot 3.x 模块可能需要 JDK 17 与 Maven 3.6.3+，而仓库其余部分使用旧版本。请用 `webBoot.javaHome` 指向所需 JDK，并搭配相应 Maven。
 - **生成的 `launch.json` 不保证能运行。** reactor 外的模块可能未被 VS Code Java 语言服务器导入，`type: java` 直启会失败；这类模块请使用本扩展的 Maven 路径。
+- **监控依赖 JDK 工具。** `jps` / `jstat` 随 JDK 提供；只有 JRE 时 JVM 指标显示不可用，Tomcat HTTP 状态仍可显示。
+- **Actuator 指标使用默认路径。** 自定义 `management.server.port` 或 `management.endpoints.web.base-path` 时不会显示线程池；HTTP 探活不受影响。
+- **终端模式不监控。** `webBoot.runner = terminal` 时拿不到 Java 进程，不采集 JVM / Tomcat 指标。
 
 ### 许可
 

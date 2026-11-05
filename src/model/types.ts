@@ -58,6 +58,46 @@ export interface BootApp {
   config: SpringConfig;
 }
 
+/** JVM 堆与 GC 指标（来自 jstat -gc） */
+export interface JvmMetrics {
+  /** 已用堆（KB） */
+  heapUsedK?: number;
+  /** 已提交堆（KB） */
+  heapCommittedK?: number;
+  /** 已用 / 已提交 */
+  heapUsedPercent?: number;
+  /** 年轻代 GC 次数与耗时（秒） */
+  ygc?: number;
+  ygct?: number;
+  /** Full GC 次数与耗时（秒） */
+  fgc?: number;
+  fgct?: number;
+  /** GC 总耗时（秒） */
+  gct?: number;
+}
+
+/** Tomcat 探活与线程池指标（线程池来自 Actuator，未启用时为空） */
+export interface TomcatMetrics {
+  /** 根路径有响应即视为存活 */
+  ok: boolean;
+  status?: number;
+  latencyMs?: number;
+  error?: string;
+  /** actuator/metrics/tomcat.threads.busy */
+  busyThreads?: number;
+  /** actuator/metrics/tomcat.threads.config.max */
+  maxThreads?: number;
+}
+
+/** 启动成功后的实时监控快照 */
+export interface AppMetrics {
+  jvm?: JvmMetrics;
+  /** jstat / jps 不可用或未找到 Java 进程时的说明 */
+  jvmError?: string;
+  tomcat?: TomcatMetrics;
+  updatedAt: number;
+}
+
 /** 每个应用的运行期状态 */
 export interface AppRuntime {
   state: AppState;
@@ -71,6 +111,8 @@ export interface AppRuntime {
   startedAt?: number;
   /** 最近一次启动的完整命令，便于排错与复制 */
   lastCommand?: string;
+  /** 启动后的 JVM / Tomcat 监控快照 */
+  metrics?: AppMetrics;
 }
 
 /** 每个应用持久化的偏好（.vscode/web-boot.json） */
