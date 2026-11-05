@@ -57,8 +57,8 @@ monitor-server         dev    :9999   /monitor
 ```
 
 - Click a stopped app to run it; click a running app to open it in the browser.
-- Hover a node for inline Run / Debug or Open / Stop buttons.
-- Right-click for profile selection, port override, and command copy.
+- Hover a node for inline Run / Debug / Edit or Open / Stop / Edit buttons.
+- Right-click for profile selection, port override, profile/port editing, and command copy.
 - Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output.
 
 ### Commands
@@ -69,6 +69,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 运行` (Run) | Start with the remembered profile and port |
 | `Web Boot: 选择 Profile 运行...` (Run with Profile) | Pick a profile from the module's `application-*.yml` files; clears the remembered port so the profile's own port applies |
 | `Web Boot: 指定端口运行...` (Run with Port) | Override the port and remember it |
+| `Web Boot: 编辑 Profile / 端口...` (Edit) | Edit the remembered profile and port without launching; an empty port falls back to the config file, and changes apply on the next start |
 | `Web Boot: 调试运行（自动 attach）` (Debug) | Start with JDWP and attach automatically after startup |
 | `Web Boot: 停止` (Stop) | End the whole process tree with `taskkill /T /F` |
 | `Web Boot: 在浏览器中打开` (Open) | Build the URL from port and context path |
@@ -164,8 +165,8 @@ monitor-server         dev    :9999   /monitor
 ```
 
 - 点击未运行的节点启动应用；点击运行中的节点在浏览器打开。
-- 悬浮节点出现内联按钮：启动 / 调试，或打开 / 停止。
-- 右键菜单可选择 Profile、指定端口、复制启动命令。
+- 悬浮节点出现内联按钮：启动 / 调试 / 编辑，或打开 / 停止 / 编辑。
+- 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口、复制启动命令。
 - 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出。
 
 ### 命令
@@ -176,6 +177,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 运行` | 用记住的 profile 与端口启动 |
 | `Web Boot: 选择 Profile 运行...` | 从模块的 `application-*.yml` 中选择 profile；切换时会清掉记住的端口，让新 profile 的配置生效 |
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
+| `Web Boot: 编辑 Profile / 端口...` | 不启动进程，直接修改记住的 profile 与端口；端口留空则回到配置文件的值，运行中的实例重启后生效 |
 | `Web Boot: 调试运行（自动 attach）` | 以 JDWP 启动，就绪后自动 attach |
 | `Web Boot: 停止` | 用 `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 在浏览器中打开` | 按端口与 context-path 拼接地址 |

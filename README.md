@@ -65,7 +65,8 @@ sample-monitor-server   dev    :9999   /monitor
 
 - 点击节点：未运行则启动，运行中则打开浏览器
 - 悬浮节点出现内联按钮：未运行时为启动 / 调试，运行中为打开 / 停止
-- 右键菜单：选择 Profile 运行、指定端口运行、复制启动命令
+- 悬浮运行中的节点也会出现编辑按钮，随时调整下次启动的 profile / 端口
+- 右键菜单：选择 Profile 运行、指定端口运行、编辑 Profile / 端口、复制启动命令
 - 标题栏按钮：刷新、检查端口冲突、生成 launch.json、显示输出
 - 底部状态栏：显示应用总数与运行中数量，点击定位到 Web Boot 视图
 - 修改 `pom.xml` 或 `application*.yml` 后自动重新扫描，通常不需要手动刷新
@@ -90,6 +91,7 @@ sample-monitor-server   dev    :9999   /monitor
 | `Web Boot: 运行` | 用记住的 profile / 端口启动 |
 | `Web Boot: 选择 Profile 运行...` | 从该模块的 `application-*.yml` 里选，选完会清掉记住的端口，让新 profile 的 yml 端口生效 |
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
+| `Web Boot: 编辑 Profile / 端口...` | 修改记住的 profile 与端口，不启动进程；端口留空则回到配置文件的值，运行中的实例重启后生效 |
 | `Web Boot: 调试运行（自动 attach）` | 启动加 JDWP，Spring Boot 打出 `Started ...` 后自动 attach |
 | `Web Boot: 停止` | `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 在浏览器中打开` | 按 `端口 + context-path` 拼地址 |

@@ -210,9 +210,8 @@ async function launch(
   }
 }
 
-async function runWithProfile(app: BootApp): Promise<void> {
-  const pref = store.get(app.id);
-  const current = resolveProfile(app, pref);
+/** 选择 profile（含手动输入）。取消返回 undefined。 */
+async function pickProfile(app: BootApp, current: string): Promise<string | undefined> {
   const available = app.config.profiles.filter((p) => p !== '');
   const items: (vscode.QuickPickItem & { profile?: string; manual?: boolean })[] = available.map(
     (p) => ({
@@ -227,18 +226,23 @@ async function runWithProfile(app: BootApp): Promise<void> {
     matchOnDescription: false
   });
   if (!picked) {
-    return;
+    return undefined;
   }
-  let profile = picked.profile;
-  if (picked.manual) {
-    const input = await vscode.window.showInputBox({
-      prompt: 'Spring profile（多个用逗号分隔）',
-      value: current
-    });
-    if (input === undefined) {
-      return;
-    }
-    profile = input.trim();
+  if (!picked.manual) {
+    return picked.profile ?? '';
+  }
+  const input = await vscode.window.showInputBox({
+    prompt: 'Spring profile（多个用逗号分隔）',
+    value: current
+  });
+  return input === undefined ? undefined : input.trim();
+}
+
+async function runWithProfile(app: BootApp): Promise<void> {
+  const pref = store.get(app.id);
+  const profile = await pickProfile(app, resolveProfile(app, pref));
+  if (profile === undefined) {
+    return;
   }
   // 换 profile 时清掉记住的端口，让新 profile 的 yml 端口生效
   await launch(app, { profile, clearPort: true });
@@ -263,6 +267,62 @@ async function runWithPort(app: BootApp): Promise<void> {
     return;
   }
   await launch(app, { port: Number(input) });
+}
+
+/**
+ * 编辑应用记住的 profile 与端口，只写 .vscode/web-boot.json，不启动进程。
+ * 端口留空表示清除覆盖，回到 profile 对应配置文件的端口。
+ */
+async function editPreferences(app: BootApp): Promise<void> {
+  const pref = store.get(app.id);
+  const currentProfile = resolveProfile(app, pref);
+
+  const profile = await pickProfile(app, currentProfile);
+  if (profile === undefined) {
+    return;
+  }
+
+  const configPort = resolvePortFromConfig(app.config, profile);
+  // 换了 profile，旧端口覆盖不再适用，改用新 profile 的配置端口作为默认值
+  const currentPort =
+    profile === currentProfile ? resolvePortValue(app, profile, pref) : configPort;
+  const input = await vscode.window.showInputBox({
+    prompt: `输入 ${app.id} 的监听端口（留空使用配置文件中的 ${configPort}）`,
+    value: String(currentPort),
+    validateInput: (value) => {
+      const text = value.trim();
+      if (!text) {
+        return undefined;
+      }
+      const port = Number(text);
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+        return '请输入 1 - 65535 之间的整数，或留空使用配置文件端口';
+      }
+      return undefined;
+    }
+  });
+  if (input === undefined) {
+    return;
+  }
+
+  const text = input.trim();
+  const port = text ? Number(text) : undefined;
+  // 与配置文件一致时不写覆盖，之后换 profile 能自然跟随 yml
+  await store.set(app.id, {
+    profile,
+    port: port === undefined || port === configPort ? undefined : port
+  });
+
+  recomputeConflicts();
+  provider.refresh();
+  updateStatusBar();
+
+  const effective = port ?? configPort;
+  const note = port === undefined || port === configPort ? '（来自配置文件）' : '（覆盖）';
+  const detail = `profile ${profile || '(默认)'} · :${effective}${note}`;
+  output.appendLine(`[偏好] ${app.id}: ${detail}`);
+  const suffix = runner.getRuntime(app.id).state === 'running' ? '，重启后生效' : '';
+  void vscode.window.showInformationMessage(`${app.id} 偏好已保存：${detail}${suffix}。`);
 }
 
 async function stopApp(app: BootApp): Promise<void> {
@@ -399,6 +459,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const app = await pickApp(arg);
     if (app) {
       await runWithPort(app);
+    }
+  });
+  register('webBoot.edit', async (arg) => {
+    const app = await pickApp(arg);
+    if (app) {
+      await editPreferences(app);
     }
   });
   register('webBoot.debug', async (arg) => {

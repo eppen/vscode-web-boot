@@ -73,6 +73,12 @@
         "icon": "$(plug)"
       },
       {
+        "command": "webBoot.edit",
+        "title": "编辑 Profile / 端口...",
+        "category": "Web Boot",
+        "icon": "$(edit)"
+      },
+      {
         "command": "webBoot.debug",
         "title": "调试运行（自动 attach）",
         "category": "Web Boot",
@@ -130,6 +136,10 @@
           "when": "false"
         },
         {
+          "command": "webBoot.edit",
+          "when": "false"
+        },
+        {
           "command": "webBoot.debug",
           "when": "false"
         },
@@ -176,6 +186,11 @@
           "group": "inline@2"
         },
         {
+          "command": "webBoot.edit",
+          "when": "view == webBoot.apps && viewItem == bootApp.stopped",
+          "group": "inline@3"
+        },
+        {
           "command": "webBoot.open",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "inline@1"
@@ -184,6 +199,11 @@
           "command": "webBoot.stop",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "inline@2"
+        },
+        {
+          "command": "webBoot.edit",
+          "when": "view == webBoot.apps && viewItem == bootApp.running",
+          "group": "inline@3"
         },
         {
           "command": "webBoot.run",
@@ -211,6 +231,11 @@
           "group": "2_tools@1"
         },
         {
+          "command": "webBoot.edit",
+          "when": "view == webBoot.apps && viewItem == bootApp.stopped",
+          "group": "2_tools@2"
+        },
+        {
           "command": "webBoot.stop",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "1_run@1"
@@ -219,6 +244,11 @@
           "command": "webBoot.open",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "2_tools@1"
+        },
+        {
+          "command": "webBoot.edit",
+          "when": "view == webBoot.apps && viewItem == bootApp.running",
+          "group": "2_tools@2"
         }
       ]
     },
