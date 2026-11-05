@@ -54,9 +54,19 @@ const cases: Case[] = [
     expect: { portInUse: true }
   },
   {
+    name: 'spring-boot:run 被跳过（pom skip=true 未覆盖）',
+    line: '[INFO] --- spring-boot-maven-plugin:2.7.18:run (default-cli) @ mes-platform-web ---',
+    expect: { skipped: false, ready: false, failed: false }
+  },
+  {
+    name: 'spring-boot:run 被跳过：Skipping run of application',
+    line: '[INFO] Skipping run of application',
+    expect: { skipped: true, ready: false, failed: false }
+  },
+  {
     name: '普通业务日志不应误判',
     line: '2026-11-05 09:00:00.123  INFO 1 --- [http-nio-8080-exec-1] c.c.p.m.s.s.SysUserController  : 用户登录成功',
-    expect: { ready: false, failed: false, portInUse: false }
+    expect: { ready: false, failed: false, portInUse: false, skipped: false }
   }
 ];
 

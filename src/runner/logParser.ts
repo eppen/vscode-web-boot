@@ -14,6 +14,8 @@ export interface BootLogSignals {
   failed: boolean;
   /** 端口被占用 */
   portInUse: boolean;
+  /** spring-boot:run 被跳过（pom 中 spring-boot.run.skip=true 且未被命令行覆盖） */
+  skipped: boolean;
 }
 
 /** 就绪：Started MesApplication in 12.345 seconds (JVM running for 15.1) */
@@ -26,12 +28,15 @@ const CONTEXT_RE = /with context path '([^']*)'/;
 const FAILED_RE = /APPLICATION FAILED TO START|BUILD FAILURE|Error starting ApplicationContext/;
 /** 端口占用 */
 const PORT_IN_USE_RE = /Port \d+ was already in use|Address already in use/i;
+/** spring-boot:run 被跳过（插件打印 "Skipping run of application"） */
+const SKIP_RE = /Skipping run of application/i;
 
 export function parseBootLogLine(line: string): BootLogSignals {
   const signals: BootLogSignals = {
     ready: READY_RE.test(line),
     failed: FAILED_RE.test(line),
-    portInUse: PORT_IN_USE_RE.test(line)
+    portInUse: PORT_IN_USE_RE.test(line),
+    skipped: SKIP_RE.test(line)
   };
   const portMatch = line.match(PORT_RE);
   if (portMatch) {

@@ -232,6 +232,11 @@ export class BootRunner implements vscode.Disposable {
           if (signals.portInUse) {
             this.log('[提示] 端口被占用。可用「指定端口运行...」换一个端口，或先停止占用该端口的应用。');
           }
+          if (signals.skipped) {
+            sawFailure = true;
+            this.log('[失败] spring-boot:run 被跳过：pom 中 spring-boot.run.skip=true 且未被命令行覆盖。');
+            this.log('        请在模块 pom 的 <properties> 中加 <spring-boot.run.skip>false</spring-boot.run.skip>。');
+          }
 
           if (!ready && signals.ready) {
             ready = true;
