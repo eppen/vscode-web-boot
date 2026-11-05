@@ -4,3 +4,5 @@ test/.tmp/
 *.vsix
 *.log
 .DS_Store
+pelican-bike.svg
+nul
