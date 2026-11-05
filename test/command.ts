@@ -1,5 +1,5 @@
 /**
- * 命令生成自检：验证 -pl/-am 分支与 -f 分支、端口覆盖、调试参数、引号处理。
+ * 命令生成自检：验证 -pl/-am 分支与 -f 分支、-am 开关、端口覆盖、调试参数、引号处理。
  * 仅用于验证，不参与扩展打包。
  */
 import { scanReactor } from '../src/scanner/maven';
@@ -14,7 +14,12 @@ async function main(): Promise<void> {
   setScanRoot(root);
   const reactor = scanReactor(root);
   const apps = await scanBootApps(root, reactor);
-  const opts = { mavenCommand: 'mvn', preBuild: 'compile' as const, extraJvmArgs: ['-Xmx2g'] };
+  const opts = {
+    mavenCommand: 'mvn',
+    preBuild: 'compile' as const,
+    extraJvmArgs: ['-Xmx2g'],
+    buildDependencies: true
+  };
 
   for (const id of ['mes-web', 'mes-monitor-server', 'mes-agentscope', 'eos-nwf-web']) {
     const app = apps.find((a) => a.id === id);
@@ -56,6 +61,21 @@ async function main(): Promise<void> {
     console.log('');
     console.log('=== mes-web 调试 + 指定端口 ===');
     console.log(`  ${plan.runLine}`);
+
+    const defaultProf = defaultProfile(app.config);
+    const noAmPlan = buildCommandPlan(
+      {
+        app,
+        profile: defaultProf,
+        port: resolvePort(app.config, defaultProf),
+        mainClass: app.mainClass,
+        debug: false
+      },
+      { ...opts, buildDependencies: false }
+    );
+    console.log('');
+    console.log('=== mes-web 关闭 -am ===');
+    console.log(`  ${noAmPlan.runLine}`);
   }
 }
 

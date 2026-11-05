@@ -79,7 +79,7 @@
       },
       {
         "command": "webBoot.edit",
-        "title": "编辑 Profile / 端口 / 主类...",
+        "title": "编辑 Profile / 端口 / 主类 / -am...",
         "category": "Web Boot",
         "icon": "$(edit)"
       },
@@ -136,6 +136,12 @@
         "title": "停止",
         "category": "Web Boot",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "webBoot.restart",
+        "title": "重启",
+        "category": "Web Boot",
+        "icon": "$(debug-restart)"
       },
       {
         "command": "webBoot.open",
@@ -219,6 +225,10 @@
           "when": "false"
         },
         {
+          "command": "webBoot.restart",
+          "when": "false"
+        },
+        {
           "command": "webBoot.open",
           "when": "false"
         }
@@ -277,9 +287,14 @@
           "group": "inline@2"
         },
         {
-          "command": "webBoot.edit",
+          "command": "webBoot.restart",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "inline@3"
+        },
+        {
+          "command": "webBoot.edit",
+          "when": "view == webBoot.apps && viewItem == bootApp.running",
+          "group": "inline@4"
         },
         {
           "command": "webBoot.startGroup",
@@ -335,6 +350,11 @@
           "command": "webBoot.stop",
           "when": "view == webBoot.apps && viewItem == bootApp.running",
           "group": "1_run@1"
+        },
+        {
+          "command": "webBoot.restart",
+          "when": "view == webBoot.apps && viewItem == bootApp.running",
+          "group": "1_run@2"
         },
         {
           "command": "webBoot.open",
@@ -402,6 +422,11 @@
           ],
           "default": "compile",
           "description": "启动前执行的 Maven 目标。"
+        },
+        "webBoot.buildDependencies": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "reactor 内启动时是否向 `mvn -pl :模块` 追加 `-am`（同时构建依赖模块）。关闭后只构建目标模块，其依赖需已安装到本地仓库（例如先执行 `mvn install -DskipTests`）。"
         },
         "webBoot.debugPort": {
           "type": "number",

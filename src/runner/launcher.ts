@@ -92,6 +92,8 @@ export class BootRunner implements vscode.Disposable {
     const mavenCommand = cfg.get<string>('mavenCommand', 'mvn');
     const preBuild = cfg.get<'none' | 'compile' | 'package' | 'install'>('preBuild', 'compile');
     const extraJvmArgs = cfg.get<string[]>('extraArgs', []);
+    // 应用级偏好优先于全局设置
+    const buildDependencies = spec.buildDependencies ?? cfg.get<boolean>('buildDependencies', true);
     const runner = cfg.get<'outputChannel' | 'terminal'>('runner', 'outputChannel');
     const autoAttach = cfg.get<boolean>('autoAttach', true);
     const autoOpen = cfg.get<boolean>('autoOpen', false);
@@ -105,7 +107,12 @@ export class BootRunner implements vscode.Disposable {
     }
 
     const finalSpec: LaunchSpec = { ...spec, debugPort };
-    const plan = buildCommandPlan(finalSpec, { mavenCommand, preBuild, extraJvmArgs });
+    const plan = buildCommandPlan(finalSpec, {
+      mavenCommand,
+      preBuild,
+      extraJvmArgs,
+      buildDependencies
+    });
 
     const contextPath = resolveContextPath(app.config, spec.profile);
     const env: NodeJS.ProcessEnv = { ...process.env };
@@ -334,7 +341,9 @@ export class BootRunner implements vscode.Disposable {
     const plan = buildCommandPlan(spec, {
       mavenCommand: cfg.get<string>('mavenCommand', 'mvn'),
       preBuild: cfg.get<'none' | 'compile' | 'package' | 'install'>('preBuild', 'compile'),
-      extraJvmArgs: cfg.get<string[]>('extraArgs', [])
+      extraJvmArgs: cfg.get<string[]>('extraArgs', []),
+      buildDependencies:
+        spec.buildDependencies ?? cfg.get<boolean>('buildDependencies', true)
     });
     return plan.preBuildLine ? `${plan.preBuildLine}\n${plan.runLine}` : plan.runLine;
   }

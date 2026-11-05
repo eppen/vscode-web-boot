@@ -2,7 +2,9 @@
  * 构造 mvn 命令。
  *
  * 两条分支：
- * 1. reactor 内：`mvn -pl :artifactId -am ... spring-boot:run`
+ * 1. reactor 内：`mvn -pl :artifactId [-am] ... spring-boot:run`
+ *    `-am` 由 webBoot.buildDependencies 控制：开启时同时构建依赖模块，
+ *    关闭时只构建目标模块，要求依赖已安装到本地仓库。
  * 2. reactor 外：`mvn -f <模块>/pom.xml ... spring-boot:run`
  *    （mes-monitor-server 与 mes-agentscope 就属于这一类，
  *      用 -pl 会报 "Could not find the selected project in the reactor"）
@@ -36,6 +38,8 @@ export interface BuildOptions {
   mavenCommand: string;
   preBuild: 'none' | 'compile' | 'package' | 'install';
   extraJvmArgs: string[];
+  /** reactor 内是否追加 -am（同时构建依赖模块）；省略时视为 true */
+  buildDependencies?: boolean;
 }
 
 /** 生成端口覆盖参数与 JVM 参数 */
@@ -59,8 +63,11 @@ export function buildCommandPlan(spec: LaunchSpec, opts: BuildOptions): CommandP
   const { app } = spec;
   const mvn = opts.mavenCommand || 'mvn';
 
+  const moduleSelector = ['-pl', `:${app.id.split('#')[0]}`];
   const selector = app.inReactor
-    ? ['-pl', `:${app.id.split('#')[0]}`, '-am']
+    ? opts.buildDependencies === false
+      ? moduleSelector
+      : [...moduleSelector, '-am']
     : // 统一用正斜杠：Windows cmd 与 bash 都接受，便于复制命令到任意终端
       ['-f', `${app.relDir}/pom.xml`];
 

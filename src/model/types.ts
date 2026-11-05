@@ -79,6 +79,8 @@ export interface AppPreference {
   port?: number;
   /** 覆盖扫描到的主类；写入 spring-boot.run.main-class */
   mainClass?: string;
+  /** 覆盖 webBoot.buildDependencies；undefined 表示跟随全局设置 */
+  buildDependencies?: boolean;
 }
 
 /** 手动分组：应用 id 最多属于一个分组 */
@@ -101,6 +103,8 @@ export interface LaunchSpec {
   port?: number;
   /** 实际启动的主类；有值时传给 spring-boot.run.main-class */
   mainClass?: string;
+  /** 实际生效的 -am 开关；undefined 表示跟随 webBoot.buildDependencies */
+  buildDependencies?: boolean;
   debug: boolean;
   debugPort?: number;
 }

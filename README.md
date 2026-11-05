@@ -64,9 +64,9 @@ sample-monitor-server   dev    :9999   /monitor
 ```
 
 - 点击节点：未运行则启动，运行中则打开浏览器
-- 悬浮节点出现内联按钮：未运行时为启动 / 调试，运行中为打开 / 停止
-- 悬浮运行中的节点也会出现编辑按钮，随时调整下次启动的 profile / 端口 / 主类
-- 右键菜单：选择 Profile 运行、指定端口运行、编辑 Profile / 端口 / 主类、移动到分组、复制启动命令
+- 悬浮节点出现内联按钮：未运行时为启动 / 调试，运行中为打开 / 停止 / 重启
+- 悬浮运行中的节点也会出现编辑按钮，随时调整下次启动的 profile / 端口 / 主类 / `-am`
+- 右键菜单：选择 Profile 运行、指定端口运行、编辑 Profile / 端口 / 主类 / `-am`、移动到分组、复制启动命令
 - 标题栏按钮：刷新、检查端口冲突、生成 launch.json、显示输出、新建分组
 - 分组：手动创建分组后，把应用拖进分组即可归类；拖到「未分组」移出。分组标题显示应用数与端口冲突组数，右键或内联按钮可启动 / 调试 / 停止整组
 - 底部状态栏：显示应用总数与运行中数量，点击定位到 Web Boot 视图
@@ -92,13 +92,14 @@ sample-monitor-server   dev    :9999   /monitor
 | `Web Boot: 运行` | 用记住的 profile / 端口 / 主类启动 |
 | `Web Boot: 选择 Profile 运行...` | 从该模块的 `application-*.yml` 里选，选完会清掉记住的端口，让新 profile 的 yml 端口生效 |
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
-| `Web Boot: 编辑 Profile / 端口 / 主类...` | 逐项修改记住的 profile、端口、主类，不启动进程；端口留空则回到配置文件的值，主类可选扫描到的候选或手动输入，运行中的实例重启后生效 |
+| `Web Boot: 编辑 Profile / 端口 / 主类 / -am...` | 逐项修改记住的 profile、端口、主类与 `-am` 开关，不启动进程；端口留空则回到配置文件的值，主类可选扫描到的候选或手动输入，`-am` 可选跟随全局或按应用覆盖，运行中的实例重启后生效 |
 | `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
 | `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除分组只解除归类，不删除应用 |
 | `Web Boot: 移动到分组...` | 通过菜单把某个应用移入分组或移出到「未分组」 |
 | `Web Boot: 启动整组` / `调试整组` / `停止整组` | 按顺序启动（或带 JDWP 调试启动）组内未运行的应用并等待就绪；停止组内运行中的应用 |
 | `Web Boot: 调试运行（自动 attach）` | 启动加 JDWP，Spring Boot 打出 `Started ...` 后自动 attach |
 | `Web Boot: 停止` | `taskkill /T /F` 结束整棵进程树 |
+| `Web Boot: 重启` | 停止后按记住的 profile / 端口 / 主类 / `-am` 重新启动；调试运行的应用仍以调试方式重启 |
 | `Web Boot: 在浏览器中打开` | 按 `端口 + context-path` 拼地址 |
 | `Web Boot: 复制启动命令` | 复制到剪贴板，可贴进任意终端 |
 | `Web Boot: 检查端口冲突` | 在输出窗口打印全部应用的有效端口与冲突组 |
@@ -111,6 +112,7 @@ sample-monitor-server   dev    :9999   /monitor
 | --- | --- | --- |
 | `webBoot.mavenCommand` | `mvn` | Maven 可执行文件 |
 | `webBoot.preBuild` | `compile` | 启动前目标：`none` / `compile` / `package` / `install` |
+| `webBoot.buildDependencies` | `true` | reactor 内是否追加 `-am`（同时构建依赖模块）。关闭后只构建目标模块，依赖需已 `install` 到本地仓库 |
 | `webBoot.debugPort` | `5005` | JDWP 端口，被占用自动 +1 |
 | `webBoot.runner` | `outputChannel` | `outputChannel` 可检测就绪与停止；`terminal` 仅把命令送进终端 |
 | `webBoot.autoAttach` | `true` | 调试运行时自动 attach |
@@ -118,12 +120,17 @@ sample-monitor-server   dev    :9999   /monitor
 | `webBoot.javaHome` | 空 | 覆盖启动进程的 `JAVA_HOME` |
 | `webBoot.extraArgs` | `[]` | 追加 JVM 参数，如 `-Xmx2g` |
 
-每个应用的 profile / 端口 / 主类和分组记在 `.vscode/web-boot.json`。该目录通常已被业务仓库的 `.gitignore` 忽略，属于个人配置：
+每个应用的 profile / 端口 / 主类 / `-am` 覆盖和分组记在 `.vscode/web-boot.json`。该目录通常已被业务仓库的 `.gitignore` 忽略，属于个人配置：
 
 ```json
 {
   "apps": {
-    "sample-web": { "profile": "dev", "port": 8082, "mainClass": "com.example.SampleWebApplication" }
+    "sample-web": {
+      "profile": "dev",
+      "port": 8082,
+      "mainClass": "com.example.SampleWebApplication",
+      "buildDependencies": false
+    }
   },
   "groups": [
     { "name": "核心服务", "apps": ["sample-web", "sample-report-web"] },
@@ -133,6 +140,8 @@ sample-monitor-server   dev    :9999   /monitor
 ```
 
 一个应用最多属于一个分组；未列入任何分组的应用显示在「未分组」下（仅在存在分组时出现）。
+
+`buildDependencies` 是应用级覆盖：不写则跟随全局 `webBoot.buildDependencies`，写了 `true` / `false` 就只影响该应用。在「编辑 Profile / 端口 / 主类 / -am...」里选择「跟随全局设置」会删掉该字段（写回时值为 `undefined`，JSON 中不再出现）。
 
 ## 实现要点
 
@@ -195,7 +204,9 @@ mvn -B -f sample-monitor-server/pom.xml -DskipTests spring-boot:run \
   -Dspring-boot.run.main-class=com.example.monitor.MonitorServerApplication
 ```
 
-主类默认取扫描结果；在「编辑 Profile / 端口 / 主类...」里可改为同模块的其它启动类或手动输入全限定名。
+主类默认取扫描结果；在「编辑 Profile / 端口 / 主类 / -am...」里可改为同模块的其它启动类或手动输入全限定名。
+
+reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变为 `mvn -B -pl :sample-web -DskipTests spring-boot:run ...`，只构建目标模块——适合依赖模块已安装、且 `-am` 会把无关模块一起拖慢甚至编译失败的仓库。
 
 调试时在 `jvmArguments` 里追加：
 

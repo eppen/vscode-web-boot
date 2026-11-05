@@ -209,6 +209,7 @@ async function launch(
     profile,
     port,
     mainClass: pref.mainClass || app.mainClass,
+    buildDependencies: pref.buildDependencies,
     debug: !!opts.debug
   };
   const ok = await runner.launch(app, spec);
@@ -342,10 +343,10 @@ function afterPreferenceChange(app: BootApp, detail: string): void {
   void vscode.window.showInformationMessage(`${app.id} 偏好已保存：${detail}${suffix}。`);
 }
 
-type EditField = 'profile' | 'port' | 'mainClass';
+type EditField = 'profile' | 'port' | 'mainClass' | 'buildDependencies';
 
 /**
- * 编辑应用记住的启动配置（profile / 端口 / 主类）。
+ * 编辑应用记住的启动配置（profile / 端口 / 主类 / -am）。
  * 只写 .vscode/web-boot.json，不启动进程；端口留空表示回到配置文件的端口。
  */
 async function editPreferences(app: BootApp): Promise<void> {
@@ -353,6 +354,10 @@ async function editPreferences(app: BootApp): Promise<void> {
   const profile = resolveProfile(app, pref);
   const port = resolvePortValue(app, profile, pref);
   const mainClass = pref.mainClass || app.mainClass;
+  const globalBuildDeps = vscode.workspace
+    .getConfiguration('webBoot')
+    .get<boolean>('buildDependencies', true);
+  const effectiveBuildDeps = pref.buildDependencies ?? globalBuildDeps;
 
   const items: (vscode.QuickPickItem & { field: EditField })[] = [
     {
@@ -369,6 +374,13 @@ async function editPreferences(app: BootApp): Promise<void> {
       label: '$(symbol-class) 主类',
       description: `${mainClass}${pref.mainClass ? '（覆盖）' : '（扫描）'}`,
       field: 'mainClass'
+    },
+    {
+      label: '$(package) 构建依赖 (-am)',
+      description: `${effectiveBuildDeps ? '使用 -am' : '不使用 -am'}${
+        pref.buildDependencies === undefined ? '（跟随全局设置）' : '（覆盖）'
+      }`,
+      field: 'buildDependencies'
     }
   ];
   const picked = await vscode.window.showQuickPick(items, {
@@ -420,6 +432,48 @@ async function editPreferences(app: BootApp): Promise<void> {
       app,
       `端口 ${next ?? configPort}${
         next === undefined || next === configPort ? '（来自配置文件）' : '（覆盖）'
+      }`
+    );
+    return;
+  }
+
+  if (picked.field === 'buildDependencies') {
+    const items: (vscode.QuickPickItem & { value?: boolean; follow?: boolean })[] = [
+      {
+        label: '$(settings-gear) 跟随全局设置',
+        description: `当前全局：${globalBuildDeps ? '使用 -am' : '不使用 -am'}`,
+        follow: true
+      },
+      {
+        label: '$(check) 使用 -am',
+        description: `同时构建依赖模块${pref.buildDependencies === true ? '（当前）' : ''}`,
+        value: true
+      },
+      {
+        label: '$(circle-slash) 不使用 -am',
+        description: `只构建当前模块，依赖需已 install${pref.buildDependencies === false ? '（当前）' : ''}`,
+        value: false
+      }
+    ];
+    const choice = await vscode.window.showQuickPick(items, {
+      placeHolder: `设置 ${app.id} 是否追加 -am`
+    });
+    if (!choice) {
+      return;
+    }
+    const value = choice.follow ? undefined : choice.value;
+    if (value === pref.buildDependencies) {
+      return;
+    }
+    await store.set(app.id, { buildDependencies: value });
+    afterPreferenceChange(
+      app,
+      `构建依赖 ${
+        value === undefined
+          ? `跟随全局设置（${globalBuildDeps ? '使用' : '不使用'} -am）`
+          : value
+            ? '使用 -am（覆盖）'
+            : '不使用 -am（覆盖）'
       }`
     );
     return;
@@ -605,6 +659,30 @@ async function stopApp(app: BootApp): Promise<void> {
   updateStatusBar();
 }
 
+/** 重启：先停止（若在运行），再按记住的配置启动；调试运行的应用仍以调试方式重启 */
+async function restartApp(app: BootApp): Promise<void> {
+  const runtime = runner.getRuntime(app.id);
+  const wasDebug = runtime.debug;
+  const runnerMode = vscode.workspace
+    .getConfiguration('webBoot')
+    .get<'outputChannel' | 'terminal'>('runner', 'outputChannel');
+
+  if (runtime.state !== 'stopped') {
+    if (runnerMode === 'terminal') {
+      void vscode.window.showWarningMessage(
+        '终端模式下无法可靠重启：请先在终端中停止该应用，再重新启动。'
+      );
+      return;
+    }
+    output.appendLine(`[重启] 正在停止 ${app.id}...`);
+    await runner.stop(app.id);
+    updateStatusBar();
+  }
+
+  output.appendLine(`[重启] ${app.id} 已停止，开始${wasDebug ? '调试' : ''}启动。`);
+  await launch(app, { debug: wasDebug });
+}
+
 async function openApp(app: BootApp): Promise<void> {
   const pref = store.get(app.id);
   const profile = resolveProfile(app, pref);
@@ -628,6 +706,7 @@ async function copyCommand(app: BootApp): Promise<void> {
     profile,
     port,
     mainClass: pref.mainClass || app.mainClass,
+    buildDependencies: pref.buildDependencies,
     debug: false
   };
   const text = runner.describe(spec);
@@ -794,6 +873,12 @@ export function activate(context: vscode.ExtensionContext): void {
     const app = await pickApp(arg, true);
     if (app) {
       await stopApp(app);
+    }
+  });
+  register('webBoot.restart', async (arg) => {
+    const app = await pickApp(arg);
+    if (app) {
+      await restartApp(app);
     }
   });
   register('webBoot.open', async (arg) => {
