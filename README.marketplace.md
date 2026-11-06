@@ -45,7 +45,7 @@ Web Boot Runner detects both cases and handles them automatically.
 1. Install **Web Boot Runner** from the Marketplace, or sideload the VSIX:
 
    ```bash
-   code --install-extension web-boot-runner-0.1.3.vsix
+   code --install-extension web-boot-runner-0.1.4.vsix
    ```
 
 2. Open the root of your multi-module project.
@@ -185,7 +185,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 1. 从插件市场安装 **Web Boot Runner**，或离线安装 VSIX：
 
    ```bash
-   code --install-extension web-boot-runner-0.1.3.vsix
+   code --install-extension web-boot-runner-0.1.4.vsix
    ```
 
 2. 打开多模块项目的根目录。

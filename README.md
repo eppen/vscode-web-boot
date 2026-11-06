@@ -40,12 +40,12 @@ npm install
 npm run package
 ```
 
-`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.3.vsix`（版本号取自 `package.json`）。打包插件市场版本时追加 `--readme-path README.marketplace.md`。安装：
+`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.4.vsix`（版本号取自 `package.json`）。打包插件市场版本时追加 `--readme-path README.marketplace.md`。安装：
 
 ```bash
-cursor --install-extension web-boot-runner-0.1.3.vsix
+cursor --install-extension web-boot-runner-0.1.4.vsix
 # 或
-code --install-extension web-boot-runner-0.1.3.vsix
+code --install-extension web-boot-runner-0.1.4.vsix
 ```
 
 开发调试：在 `D:\work\tools\vscode-web-boot` 打开窗口，按 `F5` 选择预置的扩展开发配置，按提示指定目标工作区即可启动 Extension Development Host。
