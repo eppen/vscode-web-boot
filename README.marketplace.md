@@ -44,7 +44,7 @@ Web Boot Runner detects both cases and handles them automatically.
 1. Install **Web Boot Runner** from the Marketplace, or sideload the VSIX:
 
    ```bash
-   code --install-extension web-boot-runner-0.1.0.vsix
+   code --install-extension web-boot-runner-0.1.2.vsix
    ```
 
 2. Open the root of your multi-module project.
@@ -116,7 +116,7 @@ Per-app preferences (profile, port, main class, `buildDependencies`) and manual 
 ### Notes and limitations
 
 - **Terminal mode does not detect readiness.** With `webBoot.runner = terminal`, the node is marked running immediately, auto-attach is unavailable, and Stop does not end the process in the terminal.
-- **Windows console encoding.** Subprocess output is read as UTF-8 while the Windows console often defaults to GBK. Readiness detection relies on ASCII log lines and is unaffected, but Chinese log text may appear garbled; use terminal mode or adjust the system encoding if needed.
+- **Output encoding is detected per line.** Each line's bytes are decoded as UTF-8 when valid and as GBK otherwise, so Chinese logs from JDK 8 apps on Windows (which default to `file.encoding=GBK`) display correctly without changing the system code page or switching to terminal mode. Only if the host lacks a GBK decoder (ICU missing) does it fall back to plain UTF-8, where Chinese text may still be garbled; readiness detection relies on ASCII log lines and is unaffected either way.
 - **Modules may need a different JDK or Maven.** For example, a Boot 3.x module may require JDK 17 and Maven 3.6.3+ while the rest of the repository uses older versions. Point `webBoot.javaHome` at the required JDK and use a matching Maven.
 - **Generated `launch.json` entries are not guaranteed to work.** For modules outside the reactor, the VS Code Java language server may not have imported the project. Use this extension's Maven path for those modules.
 - **Monitoring needs JDK tools.** `jps` / `jstat` ship with the JDK; with a JRE only, JVM metrics show as unavailable while the Tomcat HTTP status still works.
@@ -167,7 +167,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 1. 从插件市场安装 **Web Boot Runner**，或离线安装 VSIX：
 
    ```bash
-   code --install-extension web-boot-runner-0.1.0.vsix
+   code --install-extension web-boot-runner-0.1.2.vsix
    ```
 
 2. 打开多模块项目的根目录。
@@ -239,7 +239,7 @@ monitor-server         dev    :9999   /monitor
 ### 说明与限制
 
 - **终端模式不检测就绪。** `webBoot.runner = terminal` 时节点会直接显示为运行中，无法自动 attach，且「停止」不会结束终端中的进程。
-- **Windows 控制台编码。** 扩展以 UTF-8 读取子进程输出，而 Windows 控制台通常默认 GBK。就绪检测依赖 ASCII 日志，不受影响，但中文日志可能乱码；可改用终端模式或调整系统编码。
+- **输出编码按行自动识别。** 每行的字节在合法 UTF-8 时按 UTF-8 解码，否则按 GBK 解码，因此 Windows 上 JDK 8 应用（默认 `file.encoding=GBK`）的中文日志可以正常显示，无需改系统代码页或切到终端模式。仅当宿主缺少 GBK 解码器（ICU 不全）时退化为按 UTF-8 读取，此时中文仍可能乱码；就绪检测依赖 ASCII 日志，任何情况下都不受影响。
 - **不同模块可能需要不同 JDK / Maven。** 例如 Boot 3.x 模块可能需要 JDK 17 与 Maven 3.6.3+，而仓库其余部分使用旧版本。请用 `webBoot.javaHome` 指向所需 JDK，并搭配相应 Maven。
 - **生成的 `launch.json` 不保证能运行。** reactor 外的模块可能未被 VS Code Java 语言服务器导入，`type: java` 直启会失败；这类模块请使用本扩展的 Maven 路径。
 - **监控依赖 JDK 工具。** `jps` / `jstat` 随 JDK 提供；只有 JRE 时 JVM 指标显示不可用，Tomcat HTTP 状态仍可显示。

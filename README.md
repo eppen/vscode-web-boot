@@ -40,12 +40,12 @@ npm install
 npm run package
 ```
 
-`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.0.vsix`（版本号取自 `package.json`）。打包插件市场版本时追加 `--readme-path README.marketplace.md`。安装：
+`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.2.vsix`（版本号取自 `package.json`）。打包插件市场版本时追加 `--readme-path README.marketplace.md`。安装：
 
 ```bash
-cursor --install-extension web-boot-runner-0.1.0.vsix
+cursor --install-extension web-boot-runner-0.1.2.vsix
 # 或
-code --install-extension web-boot-runner-0.1.0.vsix
+code --install-extension web-boot-runner-0.1.2.vsix
 ```
 
 开发调试：在 `D:\work\tools\vscode-web-boot` 打开窗口，按 `F5` 选择预置的扩展开发配置，按提示指定目标工作区即可启动 Extension Development Host。
@@ -240,7 +240,7 @@ reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变
 ## 已知限制
 
 - **终端模式不检测就绪**：`webBoot.runner = terminal` 时只负责把命令送进终端，不会自动 attach；节点会直接显示为运行中，且「停止」不会结束终端里的进程。
-- **中文日志可能乱码**：扩展用 UTF-8 读子进程输出，而 Windows 控制台默认 GBK。就绪检测只依赖 ASCII 的 `Started ... in ... seconds`，不受影响；若输出里中文乱码，改用终端模式或调整系统编码。
+- **输出编码按行自动识别**：扩展逐行判断字节，整行是合法 UTF-8 就按 UTF-8 解，否则按 GBK 解，因此 Windows 上 JDK 8 应用（默认 `file.encoding=GBK`）的中文日志也能正常显示，无需改系统编码或切到终端模式。仅在 GBK 解码器不可用的极端环境（宿主 ICU 缺失）下退化为按 UTF-8 读取，此时中文仍可能乱码；就绪检测只依赖 ASCII 的 `Started ... in ... seconds`，任何情况下都不受影响。
 - **不同模块可能需要不同 JDK / Maven**：例如 Boot 3.x 工程（parent 为 `spring-boot-starter-parent`）需要 JDK 17 与 Maven 3.6.3+，与仓库中 JDK 8 / Maven 3.3.9 的模块不同。用本机默认环境跑会报 `PluginIncompatibleException`，需要用 `webBoot.javaHome` 指向对应 JDK，并使用匹配的 Maven。
 - **生成 launch.json 的 java 配置不保证能跑**：reactor 外的模块，VS Code Java 语言服务器可能未导入，`type: java` 直启会失败。这类模块请用本扩展的 `mvn` 路径。
 - **监控依赖 JDK 工具**：`jps` / `jstat` 随 JDK 提供；只有 JRE 时 JVM 指标显示「监控不可用」，Tomcat HTTP 状态仍可显示。
@@ -262,6 +262,7 @@ npm run selfcheck:cmd -- --root D:/work/jt-mes/source/mes/mes-parent
 npm run selfcheck:parse   # 日志解析（就绪 / 端口 / context-path / 失败 / 端口占用）
 npm run selfcheck:monitor # jstat / Actuator 指标解析
 npm run selfcheck:proc    # 进程树停止后端口是否真正释放
+npm run selfcheck:encoding # 子进程输出编码（UTF-8 / GBK 按行自动识别）
 ```
 
 也可以一次性设好环境变量，然后跑全部：
@@ -296,7 +297,7 @@ D:\work\tools\vscode-web-boot\
 │  ├─ scanner/springConfig.ts      profile / 端口 / context-path 解析
 │  ├─ runner/command.ts            mvn 命令生成
 │  ├─ runner/logParser.ts          启动日志解析（就绪 / 端口 / 失败）
-│  ├─ runner/processManager.ts     子进程与进程树停止
+│  ├─ runner/processManager.ts     子进程与进程树停止（输出按行识别 UTF-8 / GBK）
 │  ├─ runner/launcher.ts           单应用生命周期
 │  ├─ runner/monitor.ts            JVM / Tomcat 运行期监控
 │  ├─ debug/attach.ts              JDWP attach

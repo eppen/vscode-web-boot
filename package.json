@@ -2,7 +2,7 @@
   "name": "web-boot-runner",
   "displayName": "Web Boot Runner",
   "description": "在多模块 Maven 工作区中管理 Spring Boot 应用：启动、停止、调试、profile 与端口记忆、端口冲突检测",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "liuhualiang",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -501,7 +501,8 @@
     "selfcheck:parse": "esbuild test/parse.ts --bundle --platform=node --format=cjs --outfile=test/.tmp/parse.cjs --log-level=error && node test/.tmp/parse.cjs",
     "selfcheck:monitor": "esbuild test/monitor.ts --bundle --platform=node --format=cjs --alias:vscode=./test/vscode-stub.ts --outfile=test/.tmp/monitor.cjs --log-level=error && node test/.tmp/monitor.cjs",
     "selfcheck:proc": "esbuild test/proc.ts --bundle --platform=node --format=cjs --outfile=test/.tmp/proc.cjs --log-level=error && node test/.tmp/proc.cjs",
-    "selfcheck:all": "npm run selfcheck && npm run selfcheck:cmd && npm run selfcheck:parse && npm run selfcheck:monitor && npm run selfcheck:proc",
+    "selfcheck:encoding": "esbuild test/encoding.ts --bundle --platform=node --format=cjs --outfile=test/.tmp/encoding.cjs --log-level=error && node test/.tmp/encoding.cjs",
+    "selfcheck:all": "npm run selfcheck && npm run selfcheck:cmd && npm run selfcheck:parse && npm run selfcheck:monitor && npm run selfcheck:proc && npm run selfcheck:encoding",
     "vscode:prepublish": "npm run build",
     "package": "npm run build && vsce package --no-dependencies --allow-missing-repository"
   },
