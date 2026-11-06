@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      # 与仓库无关的解析类自检（扫描类需要目标仓库，CI 中跳过）
+      - run: npm run selfcheck:parse
+      - run: npm run selfcheck:monitor
+      - run: npm run selfcheck:encoding
+      - run: npm run selfcheck:coverage
+      # 确认打包能通过（不发布）
+      - run: npx vsce package --no-dependencies

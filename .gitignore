@@ -1,8 +1,15 @@
+# 依赖与构建产物
 node_modules/
 dist/
-test/.tmp/
+out/
+
+# 打包产物
 *.vsix
 *.log
 .DS_Store
-pelican-bike.svg
-nul
+
+# 自检脚本的临时输出
+test/.tmp/
+
+# VS Code 扩展测试宿主
+.vscode-test/

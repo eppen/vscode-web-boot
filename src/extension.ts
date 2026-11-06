@@ -1248,7 +1248,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   void scanAndRefresh().then(() => {
     if (apps.length === 0) {
-      output.appendLine('[提示] 未发现可启动应用，请确认工作区根目录为 mes-parent。');
+      output.appendLine('[提示] 未发现可启动应用，请确认工作区根目录（或子目录）包含 pom.xml 与 @SpringBootApplication 启动类。');
     }
   });
 }

@@ -1,16 +1,22 @@
-.vscode/**
+# 源码与开发配置：运行时只需要 dist/extension.js
 src/**
 test/**
-node_modules/**
+.vscode/**
+.github/**
 out/**
+node_modules/**
 esbuild.mjs
 tsconfig.json
-.gitignore
 package-lock.json
-**/*.map
-**/*.ts
-nul
-pelican-bike.svg
-*.vsix
 .vscodeignore
-!dist/extension.js
+.gitignore
+
+# 打包与调试产物
+*.vsix
+**/*.map
+
+# 文档：市场页只保留 README 与 CHANGELOG
+DEVELOPMENT.md
+
+# 未参与运行时的静态资源
+media/icon.svg

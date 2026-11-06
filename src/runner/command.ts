@@ -100,7 +100,7 @@ export function buildCommandPlan(spec: LaunchSpec, opts: BuildOptions): CommandP
     plan.preBuildLine = renderCommand(pre);
   }
 
-  // mes-parent 根 pom 默认 <spring-boot.run.skip>true</spring-boot.run.skip>，
+  // 多模块仓库的根 pom 常默认 <spring-boot.run.skip>true</spring-boot.run.skip>，
   // 命令行强制覆盖，保证 spring-boot:run 真正执行（不依赖各模块 pom 是否已覆盖）。
   // Maven 中 -D 用户属性优先级高于 pom <properties>，故此处一定生效。
   const run = [mvn, ...common, 'spring-boot:run', '-Dspring-boot.run.skip=false'];

@@ -1,0 +1,40 @@
+# Changelog
+
+本扩展遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
+
+## 0.1.5
+
+面向插件市场的整理，功能无变化。
+
+### Changed
+
+- `README.md` 改为市场版（中英双语 + 界面截图 + 徽章），开发与自检文档移入 `DEVELOPMENT.md`
+- 移除 `package.json` 的 `private` 标记，补齐 `homepage` / `bugs` / `galleryBanner` / `extensionKind` 与关键词
+- `@vscode/vsce` 升级到 3.x，`@types/vscode` 固定为 `1.75.0`，与 `engines.vscode` 保持一致
+- 精简 `.vscodeignore`，打包产物只保留运行所需文件
+
+### Fixed
+
+- 「未发现可启动应用」提示不再假定仓库名（原先写死为 `mes-parent`）
+- 自检脚本不再依赖写死的父 POM artifactId，仓库根可用 `--root` 或 `WEB_BOOT_REPO_ROOT` 指定
+
+## 0.1.4
+
+### Added
+
+- 「释放端口（结束占用进程）...」：识别端口占用者的 PID / 进程名 / 命令行，确认后结束；占用者是本扩展运行的应用时直接停止它
+
+## 0.1.0 – 0.1.3
+
+首个公开版本与随后的功能迭代，包含：
+
+- 应用树、手动分组、整组启动 / 调试 / 停止
+- reactor 感知的 `mvn spring-boot:run` 命令（reactor 外自动降级为 `-f`）
+- profile 端口与 context-path 解析、启动前端口冲突检测
+- 调试运行与启动后自动 attach
+- 生成 `launch.json`
+- 就绪 / 失败日志解析与按进程树停止
+- 运行期监控（`jstat` 堆与 GC、HTTP 探活、Actuator 线程池）
+- 「重新加载资源」（`mvn process-resources`）
+- JaCoCo 运行时覆盖率（agent 挂载、停止前 dump、exec 合并、HTML/XML 报告）
+- 子进程输出按行自动识别 UTF-8 / GBK，修复 Windows 中文日志乱码

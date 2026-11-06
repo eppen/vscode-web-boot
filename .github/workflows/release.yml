@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+      # 先在本地打包，保证产物可复现，并作为工作流制品保留
+      - name: Package VSIX
+        run: npx vsce package --no-dependencies --out web-boot-runner.vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-boot-runner-vsix
+          path: web-boot-runner.vsix
+
+      # 需要在仓库 Secrets 中配置 VSCE_PAT（Azure DevOps Personal Access Token）
+      - name: Publish to Visual Studio Marketplace
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx vsce publish --no-dependencies --packagePath web-boot-runner.vsix

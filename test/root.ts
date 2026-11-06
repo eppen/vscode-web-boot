@@ -1,29 +1,19 @@
 /**
- * 定位仓库根目录（含 mes-parent 的 pom.xml），供自检脚本使用。
+ * 定位待扫描的 Maven 仓库根目录，供自检脚本使用。
  *
- * 本扩展已移出仓库（D:\work\tools\vscode-web-boot），无法再从 __dirname
- * 向上找到 mes-parent，因此按以下优先级解析：
+ * 本扩展独立于业务仓库，无法从 __dirname 向上找到目标仓库，
+ * 因此按以下优先级解析：
  *   1. 命令行参数 --root <path>
- *   2. 环境变量 MES_REPO_ROOT
+ *   2. 环境变量 WEB_BOOT_REPO_ROOT（兼容旧名 MES_REPO_ROOT）
  *   3. 从 __dirname 向上查找
  *   4. 从 process.cwd() 向上查找（在仓库根目录直接 node 运行脚本时可用）
  */
 import * as fs from 'fs';
 import * as path from 'path';
 
-const MARKER = '<artifactId>mes-parent</artifactId>';
-
-/** 判断某目录是否为 mes-parent 仓库根 */
+/** 判断某目录是否为 Maven 仓库根（含汇总 pom.xml） */
 function isRepoRoot(dir: string): boolean {
-  const pom = path.join(dir, 'pom.xml');
-  if (!fs.existsSync(pom)) {
-    return false;
-  }
-  try {
-    return fs.readFileSync(pom, 'utf8').includes(MARKER);
-  } catch {
-    return false;
-  }
+  return fs.existsSync(path.join(dir, 'pom.xml'));
 }
 
 /** 从 start 向上逐级查找 */
@@ -58,16 +48,16 @@ export function findRepoRoot(fromDir: string): string {
     if (isRepoRoot(resolved)) {
       return resolved;
     }
-    throw new Error(`--root 指定的目录不含 mes-parent 的 pom.xml：${resolved}`);
+    throw new Error(`--root 指定的目录不含 pom.xml：${resolved}`);
   }
 
-  const fromEnv = process.env.MES_REPO_ROOT;
+  const fromEnv = process.env.WEB_BOOT_REPO_ROOT ?? process.env.MES_REPO_ROOT;
   if (fromEnv) {
     const resolved = path.resolve(fromEnv);
     if (isRepoRoot(resolved)) {
       return resolved;
     }
-    throw new Error(`MES_REPO_ROOT 指定的目录不含 mes-parent 的 pom.xml：${resolved}`);
+    throw new Error(`WEB_BOOT_REPO_ROOT 指定的目录不含 pom.xml：${resolved}`);
   }
 
   const found = searchUpward(fromDir) ?? searchUpward(process.cwd());
@@ -77,11 +67,11 @@ export function findRepoRoot(fromDir: string): string {
 
   throw new Error(
     [
-      '未找到包含 mes-parent 的 pom.xml。',
+      '未找到包含 pom.xml 的 Maven 仓库根。',
       '本扩展位于仓库之外，请显式指定仓库根，例如：',
-      '  npm run selfcheck -- --root D:/work/jt-mes/source/mes/mes-parent',
+      '  npm run selfcheck -- --root D:/work/your-repo',
       '或设置环境变量：',
-      '  $env:MES_REPO_ROOT = "D:/work/jt-mes/source/mes/mes-parent"'
+      '  $env:WEB_BOOT_REPO_ROOT = "D:/work/your-repo"'
     ].join('\n')
   );
 }
