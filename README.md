@@ -73,7 +73,7 @@ sample-monitor-server   dev    :9999   /monitor
 - 分组：手动创建分组后，把应用拖进分组即可归类；拖到「未分组」移出。分组标题显示应用数与端口冲突组数，右键或内联按钮可启动 / 调试 / 停止整组
 - 底部状态栏：显示应用总数与运行中数量，点击定位到 Web Boot 视图
 - 修改 `pom.xml` 或 `application*.yml` 后自动重新扫描，通常不需要手动刷新
-- 启动前检查端口占用，被占用时可选择自动换端口、仍用该端口或取消
+- 启动前检查端口占用，被占用时可选择结束占用进程、自动换端口、仍用该端口或取消；占用者若是本扩展管理的应用则直接停止它（保留覆盖率 dump）
 
 启动过程输出到「Web Boot」输出通道。`=====` 行之后的两行分别是预编译与启动命令，就绪后会打印访问地址：
 
@@ -110,6 +110,7 @@ sample-monitor-server   dev    :9999   /monitor
 | `Web Boot: 在浏览器中打开` | 按 `端口 + context-path` 拼地址 |
 | `Web Boot: 复制启动命令` | 复制到剪贴板，可贴进任意终端 |
 | `Web Boot: 检查端口冲突` | 在输出窗口打印全部应用的有效端口与冲突组 |
+| `Web Boot: 释放端口（结束占用进程）...` | 查询并结束占用指定端口的进程：优先识别 PID、进程名与命令行，确认后结束；占用者是本扩展运行中的应用时直接「停止」它 |
 | `Web Boot: 生成 launch.json` | 写 `type: java` 配置到 `.vscode/launch.json`，只替换 `Web Boot: ` 前缀的条目 |
 | `Web Boot: 显示输出窗口` | 打开输出通道 |
 
@@ -285,6 +286,7 @@ npm run selfcheck:cmd -- --root D:/work/jt-mes/source/mes/mes-parent
 npm run selfcheck:parse   # 日志解析（就绪 / 端口 / context-path / 失败 / 端口占用）
 npm run selfcheck:monitor # jstat / Actuator 指标解析
 npm run selfcheck:proc    # 进程树停止后端口是否真正释放
+npm run selfcheck:port    # 端口占用者识别（netstat / lsof / ss 解析）与结束进程
 npm run selfcheck:encoding # 子进程输出编码（UTF-8 / GBK 按行自动识别）
 npm run selfcheck:coverage # JaCoCo agent 参数 / dump / merge / report argv / report.xml 解析
 ```
@@ -330,6 +332,7 @@ D:\work\tools\vscode-web-boot\
 │  ├─ config/store.ts              .vscode/web-boot.json
 │  ├─ commands/generateLaunchJson.ts
 │  ├─ util/ports.ts                端口探测与冲突统计
+│  ├─ util/portProcess.ts          端口占用者识别与结束（netstat / lsof / ss）
 │  └─ util/jdk.ts                  JDK 工具定位（jps / jstat / java）与命令执行
 ├─ test/                           自检脚本（不打包）
 ├─ README.marketplace.md           插件市场双语 README

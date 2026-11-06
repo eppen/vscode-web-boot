@@ -31,6 +31,27 @@ export async function findFreePort(start: number, maxTries = 100): Promise<numbe
   return start;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * 等待端口真正释放（结束占用进程后确认用）。
+ * 进程刚被 taskkill 时内核可能还没回收监听句柄，直接重试启动会再次撞端口。
+ */
+export async function waitPortFree(port: number, timeoutMs = 5000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    if (await isPortFree(port)) {
+      return true;
+    }
+    if (Date.now() >= deadline) {
+      return false;
+    }
+    await sleep(200);
+  }
+}
+
 export interface EffectiveTarget {
   appId: string;
   profile: string;

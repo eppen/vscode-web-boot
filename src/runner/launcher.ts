@@ -300,7 +300,9 @@ export class BootRunner implements vscode.Disposable {
             sawFailure = true;
           }
           if (signals.portInUse) {
-            this.log('[提示] 端口被占用。可用「指定端口运行...」换一个端口，或先停止占用该端口的应用。');
+            this.log(
+              '[提示] 端口被占用。可用「释放端口（结束占用进程）...」结束占用者，或用「指定端口运行...」换一个端口。'
+            );
           }
           if (signals.skipped) {
             sawFailure = true;

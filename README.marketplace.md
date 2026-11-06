@@ -87,6 +87,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 在浏览器中打开` (Open) | Build the URL from port and context path |
 | `Web Boot: 复制启动命令` (Copy Command) | Copy the Maven command to the clipboard |
 | `Web Boot: 检查端口冲突` (Check Port Conflicts) | Print every app's effective port and conflict groups in the output channel |
+| `Web Boot: 释放端口（结束占用进程）...` (Release Port) | Find and kill the process listening on a given port: shows PID, process name, and command line before confirming; if the port belongs to an app managed by this extension, it stops that app instead (keeping the coverage dump) |
 | `Web Boot: 生成 launch.json` (Generate launch.json) | Write `type: java` entries to `.vscode/launch.json`, replacing only entries prefixed with `Web Boot: ` |
 | `Web Boot: 显示输出窗口` (Show Output) | Open the Web Boot output channel |
 
@@ -163,7 +164,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 - **一键启动与重启**：通过 `mvn spring-boot:run` 启动，可选预编译步骤（默认 `compile`）。
 - **reactor 感知**：reactor 内使用 `-pl :artifact`（`-am` 由 `webBoot.buildDependencies` 控制），reactor 外自动降级为 `-f <模块>/pom.xml`。
 - **profile 端口计算**：将基础配置与每个 `application-<profile>.*` 深合并，算出该 profile 的生效端口与 context-path。
-- **端口冲突检测**：启动前检查全部应用，可自动换端口、仍用该端口或取消。
+- **端口冲突检测**：启动前检查全部应用，可结束占用端口的进程、自动换端口、仍用该端口或取消；占用者是本扩展管理的应用时直接停止它。
 - **调试自动 attach**：以 JDWP 启动，Spring Boot 就绪后自动连接调试器。
 - **生成 launch.json**：为习惯按 F5 的开发者写入 `type: java` 配置。
 - **就绪检测**：解析启动日志中的 `Started ... in ... seconds`、实际端口、context-path 与常见失败信息。

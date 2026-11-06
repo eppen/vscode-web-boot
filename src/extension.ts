@@ -25,9 +25,16 @@ import {
   computeConflicts,
   findFreePort,
   isPortFree,
+  waitPortFree,
   type EffectiveTarget,
   type PortConflict
 } from './util/ports';
+import {
+  findPortOwners,
+  formatOwner,
+  killPortOwners,
+  type PortOwner
+} from './util/portProcess';
 import { buildLaunchConfigs, writeLaunchJson } from './commands/generateLaunchJson';
 import { buildUrl } from './runner/command';
 import type { AppPreference, BootApp, LaunchSpec } from './model/types';
@@ -154,9 +161,102 @@ async function pickApp(arg?: unknown, runningOnly = false): Promise<BootApp | un
   return picked?.app;
 }
 
+/** 命令行太长会撑爆对话框，截断后保留头部特征 */
+function clip(text: string, max = 160): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine;
+}
+
+/** 把占用者整理成对话框里的多行摘要 */
+function describePortOwners(owners: PortOwner[]): string {
+  const shown = owners.slice(0, 3);
+  const lines = shown.map((owner) => {
+    const cmd = owner.commandLine ? `\n    ${clip(owner.commandLine)}` : '';
+    return `  · ${formatOwner(owner)}${cmd}`;
+  });
+  if (owners.length > shown.length) {
+    lines.push(`  · 还有 ${owners.length - shown.length} 个进程`);
+  }
+  return lines.join('\n');
+}
+
+/** 终端模式下进程不归扩展管，不能走 runner.stop()，只能按外部进程处理 */
+function managedAppsStoppable(): boolean {
+  return (
+    vscode.workspace.getConfiguration('webBoot').get<string>('runner', 'outputChannel') !==
+    'terminal'
+  );
+}
+
+/** 找到占用该端口且由 Web Boot 管理的应用（运行中 / 启动中 / 停止中） */
+function findManagedAppOnPort(port: number, exceptAppId?: string): BootApp | undefined {
+  return apps.find((app) => {
+    if (app.id === exceptAppId) {
+      return false;
+    }
+    const runtime = runner.getRuntime(app.id);
+    if (!['running', 'starting', 'stopping'].includes(runtime.state)) {
+      return false;
+    }
+    if (runtime.port !== undefined) {
+      return runtime.port === port;
+    }
+    // 终端模式不记录实际端口，退回配置值匹配
+    const pref = store.get(app.id);
+    const profile = resolveProfile(app, pref);
+    return resolvePortValue(app, profile, pref) === port;
+  });
+}
+
+/** 结束占用端口的进程，并确认端口真正释放 */
+async function killOwnersAndWait(port: number, owners: PortOwner[]): Promise<boolean> {
+  output.appendLine(
+    `[端口] 结束占用 ${port} 的进程：${owners.map(formatOwner).join('、')}`
+  );
+  const result = await killPortOwners(owners);
+  for (const pid of result.killed) {
+    output.appendLine(`[端口] 已结束 pid ${pid}。`);
+  }
+  for (const failed of result.failed) {
+    output.appendLine(`[端口] 结束 pid ${failed.pid} 失败：${failed.error}`);
+  }
+  if (result.failed.length > 0) {
+    void vscode.window.showErrorMessage(
+      `端口 ${port} 的部分进程结束失败（${result.failed
+        .map((f) => f.pid)
+        .join(', ')}），可能需要管理员权限。`
+    );
+    return false;
+  }
+  if (!(await waitPortFree(port))) {
+    void vscode.window.showErrorMessage(`进程已结束，但端口 ${port} 仍被占用。`);
+    return false;
+  }
+  output.appendLine(`[端口] 端口 ${port} 已释放。`);
+  return true;
+}
+
+/** 处理「自动换端口 / 仍用该端口 / 取消」三个通用选项 */
+async function resolvePortChoice(
+  choice: string | undefined,
+  app: BootApp,
+  desired: number
+): Promise<number | null> {
+  if (choice === '自动换端口') {
+    const free = await findFreePort(desired + 1);
+    output.appendLine(`[端口] ${app.id} 由 ${desired} 改为 ${free}。`);
+    return free;
+  }
+  if (choice === '仍用该端口') {
+    return desired;
+  }
+  return null;
+}
+
 /**
  * 启动前确认端口可用。返回 null 表示用户取消。
- * 端口被占用时给三个选项：自动换端口 / 仍用该端口 / 取消。
+ * 端口被占用时先看占用者是谁：Web Boot 自己管理的应用直接停止（保留覆盖率 dump），
+ * 外部进程展示 PID / 进程名 / 命令行并支持一键结束，识别不到时退回换端口。
  */
 async function ensurePort(
   app: BootApp,
@@ -172,22 +272,141 @@ async function ensurePort(
     void vscode.window.showWarningMessage(`${app.id} 已在运行。`);
     return null;
   }
+
+  // 占用者是 Web Boot 管理的应用：不走 taskkill，保留 JaCoCo dump 与状态更新
+  const managed = managedAppsStoppable()
+    ? findManagedAppOnPort(desired, app.id)
+    : undefined;
+  if (managed) {
+    const choice = await vscode.window.showWarningMessage(
+      `${app.id} 配置的端口 ${desired} 正被 Web Boot 中运行的 ${managed.id} 占用。`,
+      '停止它并启动',
+      '自动换端口',
+      '仍用该端口',
+      '取消'
+    );
+    if (choice === '停止它并启动') {
+      output.appendLine(`[端口] 停止 ${managed.id}（占用 ${desired}）以便 ${app.id} 启动。`);
+      await runner.stop(managed.id);
+      updateStatusBar();
+      if (await waitPortFree(desired)) {
+        output.appendLine(`[端口] ${managed.id} 已停止，端口 ${desired} 已释放。`);
+        return desired;
+      }
+      void vscode.window.showErrorMessage(
+        `${managed.id} 已停止，但端口 ${desired} 仍被占用，已中止启动。`
+      );
+      return null;
+    }
+    return resolvePortChoice(choice, app, desired);
+  }
+
+  const owners = await findPortOwners(desired);
+  if (owners.length === 0) {
+    output.appendLine(
+      `[端口] 端口 ${desired} 被占用，但未能识别占用进程（可能需要管理员权限，或系统缺少 netstat / lsof）。`
+    );
+    const choice = await vscode.window.showWarningMessage(
+      `${app.id} 配置的端口 ${desired} 已被占用，但未能识别占用进程（可能需要管理员权限）。`,
+      '自动换端口',
+      '仍用该端口',
+      '取消'
+    );
+    return resolvePortChoice(choice, app, desired);
+  }
+
   const choice = await vscode.window.showWarningMessage(
-    `${app.id} 配置的端口 ${desired} 已被占用。`,
-    { modal: false },
+    `${app.id} 配置的端口 ${desired} 已被占用，结束这些进程后启动？`,
+    { modal: true, detail: describePortOwners(owners) },
+    '结束并启动',
     '自动换端口',
     '仍用该端口',
     '取消'
   );
-  if (choice === '自动换端口') {
-    const free = await findFreePort(desired + 1);
-    output.appendLine(`[端口] ${app.id} 由 ${desired} 改为 ${free}。`);
-    return free;
-  }
-  if (choice === '仍用该端口') {
+  if (choice === '结束并启动') {
+    if (!(await killOwnersAndWait(desired, owners))) {
+      return null;
+    }
     return desired;
   }
-  return null;
+  return resolvePortChoice(choice, app, desired);
+}
+
+/** 独立命令：查询任意端口的占用者并结束（不启动任何应用） */
+async function releasePort(arg?: unknown): Promise<void> {
+  const ownerApp = arg instanceof AppTreeItem ? arg.app : undefined;
+  let suggested: number | undefined;
+  if (ownerApp) {
+    const pref = store.get(ownerApp.id);
+    const profile = resolveProfile(ownerApp, pref);
+    suggested =
+      runner.getRuntime(ownerApp.id).port ?? resolvePortValue(ownerApp, profile, pref);
+  }
+
+  const input = await vscode.window.showInputBox({
+    prompt: '输入要释放的端口（会结束占用该端口的进程）',
+    value: suggested !== undefined ? String(suggested) : '',
+    validateInput: (value) => {
+      const port = Number(value.trim());
+      if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+        return '请输入 1 - 65535 之间的整数';
+      }
+      return undefined;
+    }
+  });
+  if (input === undefined) {
+    return;
+  }
+  const port = Number(input.trim());
+
+  if (await isPortFree(port)) {
+    void vscode.window.showInformationMessage(`端口 ${port} 当前空闲，无需释放。`);
+    return;
+  }
+
+  const managed = managedAppsStoppable() ? findManagedAppOnPort(port) : undefined;
+  if (managed) {
+    const choice = await vscode.window.showWarningMessage(
+      `端口 ${port} 由 Web Boot 中运行的 ${managed.id} 占用。`,
+      { modal: true },
+      '停止它'
+    );
+    if (choice !== '停止它') {
+      return;
+    }
+    output.appendLine(`[端口] 停止 ${managed.id}（占用 ${port}）...`);
+    await runner.stop(managed.id);
+    updateStatusBar();
+    if (await waitPortFree(port)) {
+      void vscode.window.showInformationMessage(`端口 ${port} 已释放（已停止 ${managed.id}）。`);
+    } else {
+      void vscode.window.showErrorMessage(`已停止 ${managed.id}，但端口 ${port} 仍被占用。`);
+    }
+    return;
+  }
+
+  const owners = await findPortOwners(port);
+  if (owners.length === 0) {
+    void vscode.window.showWarningMessage(
+      `端口 ${port} 被占用，但未能识别占用进程（可能需要管理员权限，或系统缺少 netstat / lsof）。`
+    );
+    return;
+  }
+
+  const choice = await vscode.window.showWarningMessage(
+    `端口 ${port} 被占用，确定结束这些进程？此操作不可撤销。`,
+    { modal: true, detail: describePortOwners(owners) },
+    '结束进程'
+  );
+  if (choice !== '结束进程') {
+    return;
+  }
+  const ok = await killOwnersAndWait(port, owners);
+  if (ok) {
+    void vscode.window.showInformationMessage(`端口 ${port} 已释放。`);
+  } else {
+    void vscode.window.showErrorMessage(`端口 ${port} 释放失败，请查看「Web Boot」输出窗口。`);
+  }
 }
 
 async function launch(
@@ -998,6 +1217,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
   register('webBoot.checkPortConflicts', () => checkPortConflicts());
+  register('webBoot.killPort', (arg) => releasePort(arg));
   register('webBoot.generateLaunchJson', () => generateLaunchJsonFile());
   register('webBoot.showOutput', () => output.show(true));
 
