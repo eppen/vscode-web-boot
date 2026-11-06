@@ -123,6 +123,14 @@ Per-app preferences (profile, port, main class, `buildDependencies`) and manual 
 - **Actuator metrics use the default path.** A custom `management.server.port` or `management.endpoints.web.base-path` disables the thread-pool display; HTTP probing is unaffected.
 - **Terminal mode has no monitoring.** With `webBoot.runner = terminal`, the Java process is unknown and no JVM / Tomcat metrics are collected.
 
+### Support
+
+If this extension saved you some time, you can optionally buy the author a coffee via WeChat Pay. Donations are entirely voluntary: they unlock nothing and imply no support commitment.
+
+<p align="center">
+  <img src="media/donate-wechat.png" alt="WeChat Pay QR code" width="260" />
+</p>
+
 ### License
 
 [MIT](LICENSE) © 2026 eppen
@@ -245,6 +253,14 @@ monitor-server         dev    :9999   /monitor
 - **监控依赖 JDK 工具。** `jps` / `jstat` 随 JDK 提供；只有 JRE 时 JVM 指标显示不可用，Tomcat HTTP 状态仍可显示。
 - **Actuator 指标使用默认路径。** 自定义 `management.server.port` 或 `management.endpoints.web.base-path` 时不会显示线程池；HTTP 探活不受影响。
 - **终端模式不监控。** `webBoot.runner = terminal` 时拿不到 Java 进程，不采集 JVM / Tomcat 指标。
+
+### 支持
+
+如果这个扩展帮你省下了时间，可以自愿微信扫码请作者喝杯咖啡。赞助完全自愿，不影响任何功能，也不构成任何形式的服务承诺。
+
+<p align="center">
+  <img src="media/donate-wechat.png" alt="微信打赏二维码" width="180" />
+</p>
 
 ### 许可
 

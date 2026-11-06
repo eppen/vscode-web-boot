@@ -311,8 +311,17 @@ D:\work\tools\vscode-web-boot\
    ├─ web-boot.svg
    ├─ icon.svg                     市场图标源文件
    ├─ icon.png                     市场图标（256×256）
-   └─ ui-overview.png              插件市场界面示意图
+   ├─ ui-overview.png              插件市场界面示意图
+   └─ donate-wechat.png            微信打赏二维码
 ```
+
+## 支持
+
+如果这个扩展帮你省下了时间，可以自愿微信扫码请作者喝杯咖啡。赞助完全自愿，不影响任何功能，也不构成任何形式的服务承诺。
+
+<p align="center">
+  <img src="media/donate-wechat.png" alt="微信打赏二维码" width="180" />
+</p>
 
 ## 许可证
 
