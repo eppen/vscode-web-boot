@@ -98,6 +98,42 @@ export interface AppMetrics {
   updatedAt: number;
 }
 
+/** 一类 JaCoCo 计数器（行 / 分支 / 类）的命中情况 */
+export interface CoverageCounter {
+  covered: number;
+  missed: number;
+  /** 命中率（0-100）；总数为 0 时为 undefined，避免显示 NaN */
+  rate?: number;
+}
+
+/** 一次 JaCoCo 报告的关键指标（来自 report.xml） */
+export interface CoverageSummary {
+  line: CoverageCounter;
+  branch: CoverageCounter;
+  /** 类覆盖率（JaCoCo 的 counter type=CLASS） */
+  clazz: CoverageCounter;
+  /** 生成报告的时间 */
+  updatedAt: number;
+}
+
+/** 单个应用的运行时覆盖率状态 */
+export interface CoverageState {
+  /** 本次启动是否挂了 JaCoCo agent */
+  enabled: boolean;
+  /** agent 的 tcpserver 端口（dump 时连这个端口） */
+  port?: number;
+  /** 累积的 exec 文件（多次 dump 合并后的结果） */
+  execFile?: string;
+  /** HTML 报告目录 */
+  reportDir?: string;
+  /** XML 报告路径（解析指标用） */
+  xmlFile?: string;
+  summary?: CoverageSummary;
+  /** 最近一次失败原因（不影响应用运行） */
+  error?: string;
+  updatedAt?: number;
+}
+
 /** 每个应用的运行期状态 */
 export interface AppRuntime {
   state: AppState;
@@ -113,6 +149,8 @@ export interface AppRuntime {
   lastCommand?: string;
   /** 启动后的 JVM / Tomcat 监控快照 */
   metrics?: AppMetrics;
+  /** 运行时覆盖率状态（未启用时为 undefined） */
+  coverage?: CoverageState;
 }
 
 /** 每个应用持久化的偏好（.vscode/web-boot.json） */
@@ -123,6 +161,8 @@ export interface AppPreference {
   mainClass?: string;
   /** 覆盖 webBoot.buildDependencies；undefined 表示跟随全局设置 */
   buildDependencies?: boolean;
+  /** 覆盖 webBoot.coverage（是否挂 JaCoCo agent）；undefined 表示跟随全局设置 */
+  coverage?: boolean;
 }
 
 /** 手动分组：应用 id 最多属于一个分组 */
@@ -147,6 +187,20 @@ export interface LaunchSpec {
   mainClass?: string;
   /** 实际生效的 -am 开关；undefined 表示跟随 webBoot.buildDependencies */
   buildDependencies?: boolean;
+  /** 是否启用运行时覆盖率（挂 JaCoCo agent）；undefined 表示跟随 webBoot.coverage */
+  coverage?: boolean;
+  /** 实际注入的 agent 参数；由启动器确认工具就绪后填入 */
+  coverageAgent?: CoverageAgentSpec;
   debug: boolean;
   debugPort?: number;
+}
+
+/** 注入 JVM 的 JaCoCo agent 细节（jar 路径 + tcpserver 端口） */
+export interface CoverageAgentSpec {
+  /** org.jacoco.agent-<version>-runtime.jar 的绝对路径 */
+  jar: string;
+  /** tcpserver 监听端口 */
+  port: number;
+  /** sessionid，便于在 exec 里区分应用 */
+  sessionId?: string;
 }

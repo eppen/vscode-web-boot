@@ -8,15 +8,12 @@
  *
  * 采集失败不打断应用，只把原因写进 metrics，由树节点悬浮提示展示。
  */
-import * as fs from 'fs';
-import * as path from 'path';
-import { execFile } from 'child_process';
 import * as http from 'http';
 import * as vscode from 'vscode';
 import type { AppMetrics, JvmMetrics, TomcatMetrics } from '../model/types';
+import { execText, resolveJdkTool } from '../util/jdk';
 
 export const MONITOR_INTERVAL_MS = 5000;
-const CMD_TIMEOUT_MS = 4000;
 const HTTP_TIMEOUT_MS = 2500;
 const ACTUATOR_TIMEOUT_MS = 1500;
 const MAX_BODY = 64 * 1024;
@@ -63,47 +60,6 @@ function errorMessage(err: unknown): string {
     return err.message;
   }
   return String(err);
-}
-
-function execText(file: string, args: string[], timeout = CMD_TIMEOUT_MS): Promise<string> {
-  return new Promise<string>((resolve, reject) => {
-    execFile(
-      file,
-      args,
-      { timeout, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        resolve(stdout);
-      }
-    );
-  });
-}
-
-/** 优先使用 javaHome / JAVA_HOME 下的工具，找不到再交给 PATH */
-function resolveTool(javaHome: string, name: 'jps' | 'jstat'): string {
-  const exe = process.platform === 'win32' ? `${name}.exe` : name;
-  const candidates: string[] = [];
-  const trimmed = javaHome.trim();
-  if (trimmed) {
-    candidates.push(path.join(trimmed, 'bin', exe));
-  }
-  const envHome = process.env.JAVA_HOME?.trim();
-  if (envHome) {
-    candidates.push(path.join(envHome, 'bin', exe));
-  }
-  for (const candidate of candidates) {
-    try {
-      if (fs.existsSync(candidate)) {
-        return candidate;
-      }
-    } catch {
-      // 忽略无权限等异常，继续尝试下一个
-    }
-  }
-  return name;
 }
 
 /**
@@ -292,8 +248,8 @@ export class MetricsMonitor implements vscode.Disposable {
     const ctx: MonitorContext = {
       mainClass: opts.mainClass,
       url: opts.url,
-      jps: resolveTool(opts.javaHome, 'jps'),
-      jstat: resolveTool(opts.javaHome, 'jstat'),
+      jps: resolveJdkTool(opts.javaHome, 'jps'),
+      jstat: resolveJdkTool(opts.javaHome, 'jstat'),
       generation,
       timer: setInterval(() => {
         void this.poll(appId, generation);

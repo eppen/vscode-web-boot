@@ -5,8 +5,16 @@
  * 节点上要能一眼看出三件事：用哪个 profile、占哪个端口、是否在 reactor 内。
  * 端口冲突用警告图标提示（本仓库四个 web 模块默认都是 8080）。
  */
+import * as path from 'path';
 import * as vscode from 'vscode';
-import type { AppGroup, AppMetrics, AppPreference, AppRuntime, BootApp } from '../model/types';
+import type {
+  AppGroup,
+  AppMetrics,
+  AppPreference,
+  AppRuntime,
+  BootApp,
+  CoverageState
+} from '../model/types';
 import type { PortConflict } from '../util/ports';
 import { buildUrl } from '../runner/command';
 
@@ -54,6 +62,10 @@ export class AppTreeItem extends vscode.TreeItem {
     const metricsSummary = formatMetricsSummary(runtime.metrics);
     if (metricsSummary) {
       parts.push(metricsSummary);
+    }
+    const coverageSummary = formatCoverageSummary(runtime.coverage);
+    if (coverageSummary) {
+      parts.push(coverageSummary);
     }
     this.description = parts.join('  ');
 
@@ -130,6 +142,7 @@ function buildTooltip(
   }
   md.appendMarkdown(`- 状态：${STATE_LABEL[runtime.state] ?? runtime.state}\n`);
   appendMetricsTooltip(md, runtime.metrics);
+  appendCoverageTooltip(md, runtime.coverage);
   if (runtime.pid) {
     md.appendMarkdown(`- pid：\`${runtime.pid}\`\n`);
   }
@@ -212,6 +225,51 @@ function appendMetricsTooltip(md: vscode.MarkdownString, metrics?: AppMetrics): 
   md.appendMarkdown(
     `- 监控更新：${new Date(metrics.updatedAt).toLocaleTimeString()}\n`
   );
+}
+
+/** 树节点上的紧凑覆盖率：JaCoCo · 覆盖 45.2%（行命中率） */
+function formatCoverageSummary(coverage?: CoverageState): string | undefined {
+  if (!coverage) {
+    return undefined;
+  }
+  const parts: string[] = [];
+  if (coverage.enabled) {
+    parts.push('JaCoCo');
+  }
+  const rate = coverage.summary?.line.rate;
+  if (rate !== undefined) {
+    parts.push(`覆盖 ${rate.toFixed(1)}%`);
+  }
+  return parts.length > 0 ? parts.join(' · ') : undefined;
+}
+
+/** 悬浮提示里的覆盖率详情：行 / 分支 / 类命中率、报告位置、最近错误 */
+function appendCoverageTooltip(md: vscode.MarkdownString, coverage?: CoverageState): void {
+  if (!coverage) {
+    return;
+  }
+  if (coverage.enabled) {
+    md.appendMarkdown(`- 覆盖率：JaCoCo agent 已挂载（tcpserver ${coverage.port ?? '?'}）\n`);
+  }
+  const summary = coverage.summary;
+  if (summary) {
+    const line =
+      summary.line.rate !== undefined
+        ? `${summary.line.rate.toFixed(1)}%（${summary.line.covered}/${
+            summary.line.covered + summary.line.missed
+          }）`
+        : '--';
+    const branch = summary.branch.rate !== undefined ? `${summary.branch.rate.toFixed(1)}%` : '--';
+    const clazz = summary.clazz.rate !== undefined ? `${summary.clazz.rate.toFixed(1)}%` : '--';
+    md.appendMarkdown(`- 覆盖率：行 ${line} · 分支 ${branch} · 类 ${clazz}\n`);
+    md.appendMarkdown(`- 报告时间：${new Date(summary.updatedAt).toLocaleString()}\n`);
+  }
+  if (coverage.reportDir) {
+    md.appendMarkdown(`- 报告：\`${path.join(coverage.reportDir, 'index.html')}\`\n`);
+  }
+  if (coverage.error) {
+    md.appendMarkdown(`- 覆盖率错误：${coverage.error}\n`);
+  }
 }
 
 function buildGroupTooltip(

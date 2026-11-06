@@ -10,6 +10,7 @@
  *      用 -pl 会报 "Could not find the selected project in the reactor"）
  */
 import type { LaunchSpec } from '../model/types';
+import { buildJacocoAgentArg } from './coverage';
 
 export interface CommandPlan {
   /** 预编译命令 argv（preBuild = none 时为 undefined） */
@@ -45,6 +46,18 @@ export interface BuildOptions {
 /** 生成端口覆盖参数与 JVM 参数 */
 function buildJvmArgs(spec: LaunchSpec, extra: string[]): string[] {
   const args = ['-Dspring.devtools.restart.enabled=false'];
+  // 覆盖率：agent 只能通过 spring-boot.run.jvmArguments 注入，
+  // 且必须用 tcpserver 模式 —— 停止走 taskkill /F，JVM 不会执行 shutdown hook，
+  // dumponexit 拿不到任何数据。
+  if (spec.coverageAgent) {
+    args.push(
+      buildJacocoAgentArg({
+        jar: spec.coverageAgent.jar,
+        port: spec.coverageAgent.port,
+        sessionId: spec.coverageAgent.sessionId ?? spec.app.id
+      })
+    );
+  }
   if (spec.debug && spec.debugPort) {
     // JDK 8/11/17 均支持 address=<port>；不要用 *:port（仅 JDK 9+）
     args.push(

@@ -210,6 +210,7 @@ async function launch(
     port,
     mainClass: pref.mainClass || app.mainClass,
     buildDependencies: pref.buildDependencies,
+    coverage: pref.coverage,
     debug: !!opts.debug
   };
   const ok = await runner.launch(app, spec);
@@ -343,7 +344,7 @@ function afterPreferenceChange(app: BootApp, detail: string): void {
   void vscode.window.showInformationMessage(`${app.id} 偏好已保存：${detail}${suffix}。`);
 }
 
-type EditField = 'profile' | 'port' | 'mainClass' | 'buildDependencies';
+type EditField = 'profile' | 'port' | 'mainClass' | 'buildDependencies' | 'coverage';
 
 /**
  * 编辑应用记住的启动配置（profile / 端口 / 主类 / -am）。
@@ -358,6 +359,8 @@ async function editPreferences(app: BootApp): Promise<void> {
     .getConfiguration('webBoot')
     .get<boolean>('buildDependencies', true);
   const effectiveBuildDeps = pref.buildDependencies ?? globalBuildDeps;
+  const globalCoverage = vscode.workspace.getConfiguration('webBoot').get<boolean>('coverage', false);
+  const effectiveCoverage = pref.coverage ?? globalCoverage;
 
   const items: (vscode.QuickPickItem & { field: EditField })[] = [
     {
@@ -381,6 +384,13 @@ async function editPreferences(app: BootApp): Promise<void> {
         pref.buildDependencies === undefined ? '（跟随全局设置）' : '（覆盖）'
       }`,
       field: 'buildDependencies'
+    },
+    {
+      label: '$(pulse) 覆盖率 (JaCoCo)',
+      description: `${effectiveCoverage ? '启用' : '关闭'}${
+        pref.coverage === undefined ? '（跟随全局设置）' : '（覆盖）'
+      }`,
+      field: 'coverage'
     }
   ];
   const picked = await vscode.window.showQuickPick(items, {
@@ -474,6 +484,50 @@ async function editPreferences(app: BootApp): Promise<void> {
           : value
             ? '使用 -am（覆盖）'
             : '不使用 -am（覆盖）'
+      }`
+    );
+    return;
+  }
+
+  if (picked.field === 'coverage') {
+    const items: (vscode.QuickPickItem & { value?: boolean; follow?: boolean })[] = [
+      {
+        label: '$(settings-gear) 跟随全局设置',
+        description: `当前全局：${globalCoverage ? '启用' : '关闭'}`,
+        follow: true
+      },
+      {
+        label: '$(check) 启用覆盖率',
+        description: `启动时挂 JaCoCo agent，停止/采样时 dump 并生成报告${
+          pref.coverage === true ? '（当前）' : ''
+        }`,
+        value: true
+      },
+      {
+        label: '$(circle-slash) 关闭覆盖率',
+        description: `不挂 agent${pref.coverage === false ? '（当前）' : ''}`,
+        value: false
+      }
+    ];
+    const choice = await vscode.window.showQuickPick(items, {
+      placeHolder: `设置 ${app.id} 是否启用覆盖率（JaCoCo）`
+    });
+    if (!choice) {
+      return;
+    }
+    const value = choice.follow ? undefined : choice.value;
+    if (value === pref.coverage) {
+      return;
+    }
+    await store.set(app.id, { coverage: value });
+    afterPreferenceChange(
+      app,
+      `覆盖率 ${
+        value === undefined
+          ? `跟随全局设置（${globalCoverage ? '启用' : '关闭'}）`
+          : value
+            ? '启用（覆盖）'
+            : '关闭（覆盖）'
       }`
     );
     return;
@@ -910,6 +964,26 @@ export function activate(context: vscode.ExtensionContext): void {
     if (app) {
       await reloadResources(app);
     }
+  });
+  register('webBoot.sampleCoverage', async (arg) => {
+    const app = await pickApp(arg);
+    if (app) {
+      await runner.sampleCoverage(app.id);
+    }
+  });
+  register('webBoot.openCoverageReport', async (arg) => {
+    const app = await pickApp(arg);
+    if (!app) {
+      return;
+    }
+    const file = runner.coverageReportFile(app.id);
+    if (!file) {
+      void vscode.window.showWarningMessage(
+        `${app.id} 还没有覆盖率报告：请开启覆盖率后启动应用，访问接口再采样。`
+      );
+      return;
+    }
+    await vscode.env.openExternal(vscode.Uri.file(file));
   });
   register('webBoot.open', async (arg) => {
     const app = await pickApp(arg);

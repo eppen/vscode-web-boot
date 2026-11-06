@@ -40,12 +40,12 @@ npm install
 npm run package
 ```
 
-`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.2.vsix`（版本号取自 `package.json`）。打包插件市场版本时追加 `--readme-path README.marketplace.md`。安装：
+`npm run package` 会先构建再打包，产物为 `web-boot-runner-0.1.3.vsix`（版本号取自 `package.json`）。打包插件市场版本时追加 `--readme-path README.marketplace.md`。安装：
 
 ```bash
-cursor --install-extension web-boot-runner-0.1.2.vsix
+cursor --install-extension web-boot-runner-0.1.3.vsix
 # 或
-code --install-extension web-boot-runner-0.1.2.vsix
+code --install-extension web-boot-runner-0.1.3.vsix
 ```
 
 开发调试：在 `D:\work\tools\vscode-web-boot` 打开窗口，按 `F5` 选择预置的扩展开发配置，按提示指定目标工作区即可启动 Extension Development Host。
@@ -68,6 +68,7 @@ sample-monitor-server   dev    :9999   /monitor
 - 悬浮运行中的节点也会出现编辑按钮，随时调整下次启动的 profile / 端口 / 主类 / `-am`
 - 右键菜单：选择 Profile 运行、指定端口运行、编辑 Profile / 端口 / 主类 / `-am`、移动到分组、复制启动命令
 - 运行中的应用右键可「重新加载资源」，执行 `mvn process-resources` 把资源的改动拷入 `target/classes`，不重启进程
+- 开启 `webBoot.coverage` 后，启动会自动挂 JaCoCo agent：树节点追加 `JaCoCo · 覆盖 45.2%`，右键「采样覆盖率」随时 dump 并生成报告，「打开覆盖率报告」在浏览器里看 HTML 明细
 - 标题栏按钮：刷新、检查端口冲突、生成 launch.json、显示输出、新建分组
 - 分组：手动创建分组后，把应用拖进分组即可归类；拖到「未分组」移出。分组标题显示应用数与端口冲突组数，右键或内联按钮可启动 / 调试 / 停止整组
 - 底部状态栏：显示应用总数与运行中数量，点击定位到 Web Boot 视图
@@ -95,7 +96,7 @@ sample-monitor-server   dev    :9999   /monitor
 | `Web Boot: 运行` | 用记住的 profile / 端口 / 主类启动 |
 | `Web Boot: 选择 Profile 运行...` | 从该模块的 `application-*.yml` 里选，选完会清掉记住的端口，让新 profile 的 yml 端口生效 |
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
-| `Web Boot: 编辑 Profile / 端口 / 主类 / -am...` | 逐项修改记住的 profile、端口、主类与 `-am` 开关，不启动进程；端口留空则回到配置文件的值，主类可选扫描到的候选或手动输入，`-am` 可选跟随全局或按应用覆盖，运行中的实例重启后生效 |
+| `Web Boot: 编辑 Profile / 端口 / 主类 / -am / 覆盖率...` | 逐项修改记住的 profile、端口、主类、`-am` 开关与覆盖率开关，不启动进程；端口留空则回到配置文件的值，主类可选扫描到的候选或手动输入，`-am` 与覆盖率均可选跟随全局或按应用覆盖，运行中的实例重启后生效 |
 | `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
 | `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除分组只解除归类，不删除应用 |
 | `Web Boot: 移动到分组...` | 通过菜单把某个应用移入分组或移出到「未分组」 |
@@ -104,6 +105,8 @@ sample-monitor-server   dev    :9999   /monitor
 | `Web Boot: 停止` | `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 重启` | 停止后按记住的 profile / 端口 / 主类 / `-am` 重新启动；调试运行的应用仍以调试方式重启 |
 | `Web Boot: 重新加载资源` | 对运行中的应用执行 `mvn process-resources`，把资源改动拷入 `target/classes`；不重启进程，执行中点「停止」可打断 |
+| `Web Boot: 采样覆盖率` | 运行中先 dump 最新执行数据再出报告；已停止时直接用累积的 exec 重新出报告。需要本次启动挂了 JaCoCo agent |
+| `Web Boot: 打开覆盖率报告` | 在浏览器中打开该应用最近一次生成的 HTML 报告（`index.html`） |
 | `Web Boot: 在浏览器中打开` | 按 `端口 + context-path` 拼地址 |
 | `Web Boot: 复制启动命令` | 复制到剪贴板，可贴进任意终端 |
 | `Web Boot: 检查端口冲突` | 在输出窗口打印全部应用的有效端口与冲突组 |
@@ -124,8 +127,11 @@ sample-monitor-server   dev    :9999   /monitor
 | `webBoot.autoOpen` | `false` | 就绪后自动打开浏览器 |
 | `webBoot.javaHome` | 空 | 覆盖启动进程的 `JAVA_HOME` |
 | `webBoot.extraArgs` | `[]` | 追加 JVM 参数，如 `-Xmx2g` |
+| `webBoot.coverage` | `false` | 启动时挂 JaCoCo agent（tcpserver 模式），停止 / 采样时先 dump 再结束进程，生成 HTML + XML 覆盖率报告。终端模式下不可用 |
+| `webBoot.coveragePort` | `6300` | JaCoCo agent 的 tcpserver 端口，被占用自动 +1 |
+| `webBoot.coverageJacocoVersion` | `0.8.13` | JaCoCo 版本（agent 与 CLI），首次启用时 `mvn dependency:get` 下载并缓存到 `.vscode/web-boot/jacoco/` |
 
-每个应用的 profile / 端口 / 主类 / `-am` 覆盖和分组记在 `.vscode/web-boot.json`。该目录通常已被业务仓库的 `.gitignore` 忽略，属于个人配置：
+每个应用的 profile / 端口 / 主类 / `-am` / 覆盖率覆盖和分组记在 `.vscode/web-boot.json`。该目录通常已被业务仓库的 `.gitignore` 忽略，属于个人配置：
 
 ```json
 {
@@ -134,7 +140,8 @@ sample-monitor-server   dev    :9999   /monitor
       "profile": "dev",
       "port": 8082,
       "mainClass": "com.example.SampleWebApplication",
-      "buildDependencies": false
+      "buildDependencies": false,
+      "coverage": true
     }
   },
   "groups": [
@@ -146,7 +153,7 @@ sample-monitor-server   dev    :9999   /monitor
 
 一个应用最多属于一个分组；未列入任何分组的应用显示在「未分组」下（仅在存在分组时出现）。
 
-`buildDependencies` 是应用级覆盖：不写则跟随全局 `webBoot.buildDependencies`，写了 `true` / `false` 就只影响该应用。在「编辑 Profile / 端口 / 主类 / -am...」里选择「跟随全局设置」会删掉该字段（写回时值为 `undefined`，JSON 中不再出现）。
+`buildDependencies` 是应用级覆盖：不写则跟随全局 `webBoot.buildDependencies`，写了 `true` / `false` 就只影响该应用。在「编辑 Profile / 端口 / 主类 / -am / 覆盖率...」里选择「跟随全局设置」会删掉该字段（写回时值为 `undefined`，JSON 中不再出现）。`coverage` 同理，跟随全局 `webBoot.coverage`。
 
 ## 实现要点
 
@@ -179,6 +186,21 @@ sample-monitor-server   dev    :9999   /monitor
 - 若应用暴露了 Actuator，额外请求 `/actuator/metrics/tomcat.threads.busy` 与 `tomcat.threads.config.max`，显示 Tomcat 线程池占用。
 
 采集失败只在悬浮提示里注明原因，不会弹窗或中断应用。
+
+### 运行时覆盖率（JaCoCo）
+
+`webBoot.coverage = true`（或按应用覆盖）时，启动流程在 `spring-boot.run.jvmArguments` 里追加：
+
+```text
+-javaagent:<agent.jar>=output=tcpserver,address=127.0.0.1,port=6300,dumponexit=false,sessionid=<appId>
+```
+
+- **为什么必须显式 dump**：停止走 `taskkill /T /F`，JVM 不会执行 shutdown hook，`dumponexit` 拿不到数据。所以 agent 用 `tcpserver` 模式，停止 / 手动采样时先用 `jacococli dump` 连端口把执行数据拉出来，再杀进程。
+- **exec 累积**：每次 dump 出的 exec 与历史 exec 用 `jacococli merge` 合并到 `.vscode/web-boot/coverage/<appId>/jacoco.exec`，多次启动 / 采样的数据不会互相覆盖。
+- **报告**：`jacococli report` 同时生成 HTML（`html/index.html`）与 XML（`report.xml`），扩展解析 XML 里的报告级 counter，把行 / 分支 / 类命中率写进树节点与悬浮提示。
+- **工具准备**：agent（`runtime` classifier）与 CLI（`nodeps`）从 Maven 本地仓库取，缺失时自动 `mvn dependency:get` 下载，副本缓存到 `.vscode/web-boot/jacoco/<version>/`。
+- **降级策略**：覆盖率准备失败（缺 JDK、下载失败、`target/classes` 不存在等）只降级为「本次不启用覆盖率」，不影响应用启动；dump / 报告失败只记录原因，不中断停止流程。
+- **限制**：只统计本模块 `target/classes` 的字节码（依赖模块的代码不计入）；终端模式（`webBoot.runner = terminal`）拿不到进程生命周期，不启用覆盖率；「复制启动命令」复制的是不含 agent 的原始命令。
 
 ### process-resources 与 devtools
 
@@ -246,6 +268,7 @@ reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变
 - **监控依赖 JDK 工具**：`jps` / `jstat` 随 JDK 提供；只有 JRE 时 JVM 指标显示「监控不可用」，Tomcat HTTP 状态仍可显示。
 - **Actuator 指标使用默认路径**：自定义 `management.server.port` 或 `management.endpoints.web.base-path` 时，Tomcat 线程池不会显示，但 HTTP 探活不受影响。
 - **终端模式不监控**：`webBoot.runner = terminal` 时拿不到 Java 进程，也不会采集 JVM / Tomcat 指标。
+- **覆盖率需要已编译字节码**：dump / 报告用 `java -jar jacococli` 执行（JDK / JRE 均可）；模块未编译（`target/classes` 不存在）时本次不启用覆盖率。终端模式下覆盖率不可用。
 
 ## 自检
 
@@ -263,6 +286,7 @@ npm run selfcheck:parse   # 日志解析（就绪 / 端口 / context-path / 失�
 npm run selfcheck:monitor # jstat / Actuator 指标解析
 npm run selfcheck:proc    # 进程树停止后端口是否真正释放
 npm run selfcheck:encoding # 子进程输出编码（UTF-8 / GBK 按行自动识别）
+npm run selfcheck:coverage # JaCoCo agent 参数 / dump / merge / report argv / report.xml 解析
 ```
 
 也可以一次性设好环境变量，然后跑全部：
@@ -300,11 +324,13 @@ D:\work\tools\vscode-web-boot\
 │  ├─ runner/processManager.ts     子进程与进程树停止（输出按行识别 UTF-8 / GBK）
 │  ├─ runner/launcher.ts           单应用生命周期
 │  ├─ runner/monitor.ts            JVM / Tomcat 运行期监控
+│  ├─ runner/coverage.ts           运行时覆盖率（JaCoCo agent / dump / merge / report）
 │  ├─ debug/attach.ts              JDWP attach
 │  ├─ views/appsTreeProvider.ts    侧边栏树
 │  ├─ config/store.ts              .vscode/web-boot.json
 │  ├─ commands/generateLaunchJson.ts
-│  └─ util/ports.ts                端口探测与冲突统计
+│  ├─ util/ports.ts                端口探测与冲突统计
+│  └─ util/jdk.ts                  JDK 工具定位（jps / jstat / java）与命令执行
 ├─ test/                           自检脚本（不打包）
 ├─ README.marketplace.md           插件市场双语 README
 └─ media/

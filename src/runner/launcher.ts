@@ -6,17 +6,74 @@
  * <useClasspathFile>true</useClasspathFile> 来解决 Windows classpath 过长
  * （error=206）。走 java 直启会重新踩这些坑。
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
-import type { AppRuntime, BootApp, LaunchSpec } from '../model/types';
+import type { AppRuntime, BootApp, CoverageAgentSpec, CoverageState, LaunchSpec } from '../model/types';
 import { defaultProfile, resolveContextPath, resolvePort } from '../scanner/springConfig';
 import { attachToApp } from '../debug/attach';
 import { buildCommandPlan, buildProcessResourcesCommand, buildUrl } from './command';
+import {
+  DEFAULT_JACOCO_VERSION,
+  buildDumpArgs,
+  buildMergeArgs,
+  buildReportArgs,
+  coverageDir,
+  ensureJacocoTools,
+  parseJacocoXml,
+  resolveCoverageEnabled,
+  toolsCacheDir
+} from './coverage';
 import { parseBootLogLine } from './logParser';
 import { MetricsMonitor } from './monitor';
 import { spawnManaged, type ManagedProcess } from './processManager';
 import { findFreePort } from '../util/ports';
+import { execText, friendlyError, resolveJdkTool } from '../util/jdk';
 
 const READY_TIMEOUT_MS = 240_000;
+/** dump / merge / report 各自的超时：dump 要连 agent，report 要扫字节码 */
+const DUMP_TIMEOUT_MS = 20_000;
+const MERGE_TIMEOUT_MS = 60_000;
+const REPORT_TIMEOUT_MS = 120_000;
+
+/** 目录是否存在（避免把不存在的 classfiles 传给 jacococli） */
+function existsDir(dir: string): boolean {
+  try {
+    return fs.statSync(dir).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function existsFile(file: string): boolean {
+  try {
+    return fs.statSync(file).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** 覆盖率百分比展示：无数据时显示 -- */
+function formatRate(rate: number | undefined): string {
+  return rate === undefined ? '--' : `${rate.toFixed(1)}%`;
+}
+
+/** 一次运行期覆盖率所需的全部上下文（不进 AppRuntime，避免把路径塞进模型） */
+interface CoverageContext {
+  appId: string;
+  port: number;
+  cliJar: string;
+  /** java 可执行文件（跑 jacococli 用） */
+  java: string;
+  /** 本应用的覆盖率工作目录 */
+  dir: string;
+  /** 累积的 exec：每次 dump 后 merge 进来 */
+  execFile: string;
+  htmlDir: string;
+  xmlFile: string;
+  classfiles: string[];
+  sourcefiles: string[];
+}
 
 export class BootRunner implements vscode.Disposable {
   private readonly runtimes = new Map<string, AppRuntime>();
@@ -27,6 +84,10 @@ export class BootRunner implements vscode.Disposable {
   private readonly cancelled = new Set<string>();
   /** 正在执行 process-resources 的应用，避免重复触发 */
   private readonly resourcesRunning = new Set<string>();
+  /** 覆盖率上下文：只有挂了 agent 的应用才有 */
+  private readonly coverageContexts = new Map<string, CoverageContext>();
+  /** 正在 dump / 出报告的应用，避免并发触发两次 jacococli */
+  private readonly coverageBusy = new Set<string>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly emitter = new vscode.EventEmitter<string>();
   private readonly monitor = new MetricsMonitor();
@@ -105,6 +166,7 @@ export class BootRunner implements vscode.Disposable {
     const autoOpen = cfg.get<boolean>('autoOpen', false);
     const javaHome = cfg.get<string>('javaHome', '').trim();
     const monitorEnabled = cfg.get<boolean>('monitor', true);
+    const coverageWanted = resolveCoverageEnabled(cfg.get<boolean>('coverage', false), spec.coverage);
 
     // 调试端口避让
     let debugPort: number | undefined;
@@ -113,7 +175,15 @@ export class BootRunner implements vscode.Disposable {
       debugPort = await findFreePort(base);
     }
 
-    const finalSpec: LaunchSpec = { ...spec, debugPort };
+    // 覆盖率 agent：确认工具就绪后拿到 agent jar 与 tcpserver 端口
+    let coverageAgent: CoverageAgentSpec | undefined;
+    if (coverageWanted && runner === 'terminal') {
+      this.log('[覆盖率] 终端模式下无法 dump（拿不到 agent 端口与进程生命周期），本次不启用覆盖率。');
+    } else if (coverageWanted) {
+      coverageAgent = await this.prepareCoverage(app, cfg, mavenCommand);
+    }
+
+    const finalSpec: LaunchSpec = { ...spec, debugPort, coverageAgent };
     const plan = buildCommandPlan(finalSpec, {
       mavenCommand,
       preBuild,
@@ -278,6 +348,16 @@ export class BootRunner implements vscode.Disposable {
           this.monitor.stop(app.id);
           this.log(`[退出] ${app.id} 进程结束（退出码 ${code ?? 'unknown'}）。`);
           this.update(app.id, { state: 'stopped', pid: undefined, metrics: undefined });
+          // 进程已退出：agent 端口随之关闭，本次运行的覆盖率标记为未启用，
+          // 但保留上次的汇总指标与报告路径，树节点仍能看到结果。
+          const coverage = this.getRuntime(app.id).coverage;
+          if (coverage) {
+            this.update(app.id, { coverage: { ...coverage, enabled: false } });
+          }
+          // 非用户主动停止（崩溃 / 异常退出）时，仍尝试用已有 exec 出一次报告
+          if (coverage && !this.cancelled.has(app.id) && this.coverageContexts.has(app.id)) {
+            void this.reportCoverage(app.id);
+          }
 
           if (!ready && !settled) {
             const reason = sawFailure ? '启动失败' : '进程已退出';
@@ -363,6 +443,244 @@ export class BootRunner implements vscode.Disposable {
     }
   }
 
+  // ---------------- 运行时覆盖率（JaCoCo） ----------------
+
+  /**
+   * 准备覆盖率：确保 agent / cli 就绪，分配 tcpserver 端口，登记上下文。
+   * 任何失败都只降级为「本次不启用覆盖率」，不影响应用启动。
+   */
+  private async prepareCoverage(
+    app: BootApp,
+    cfg: vscode.WorkspaceConfiguration,
+    mvn: string
+  ): Promise<CoverageAgentSpec | undefined> {
+    const javaHome = cfg.get<string>('javaHome', '').trim();
+    const version =
+      (cfg.get<string>('coverageJacocoVersion', DEFAULT_JACOCO_VERSION) || DEFAULT_JACOCO_VERSION)
+        .trim() || DEFAULT_JACOCO_VERSION;
+    try {
+      const tools = await ensureJacocoTools({
+        mvn,
+        version,
+        cacheDir: toolsCacheDir(this.root, version),
+        cwd: this.root,
+        log: (line) => this.log(line)
+      });
+      const classfiles = [path.join(app.dir, 'target', 'classes')].filter(existsDir);
+      if (classfiles.length === 0) {
+        throw new Error(
+          `未找到 ${app.relDir}/target/classes，覆盖率需要已编译的字节码（预编译为 none 时请先手动编译）`
+        );
+      }
+      const sourcefiles = [path.join(app.dir, 'src', 'main', 'java')].filter(existsDir);
+      const port = await findFreePort(cfg.get<number>('coveragePort', 6300));
+      const dir = coverageDir(this.root, app.id);
+      fs.mkdirSync(dir, { recursive: true });
+
+      const ctx: CoverageContext = {
+        appId: app.id,
+        port,
+        cliJar: tools.cliJar,
+        java: resolveJdkTool(javaHome, 'java'),
+        dir,
+        execFile: path.join(dir, 'jacoco.exec'),
+        htmlDir: path.join(dir, 'html'),
+        xmlFile: path.join(dir, 'report.xml'),
+        classfiles,
+        sourcefiles
+      };
+      this.coverageContexts.set(app.id, ctx);
+
+      const previous = this.getRuntime(app.id).coverage;
+      this.update(app.id, {
+        coverage: {
+          enabled: true,
+          port,
+          execFile: ctx.execFile,
+          reportDir: ctx.htmlDir,
+          xmlFile: ctx.xmlFile,
+          summary: previous?.summary,
+          updatedAt: Date.now()
+        }
+      });
+      this.log(
+        `[覆盖率] ${app.id} 挂载 JaCoCo ${version} agent：tcpserver 127.0.0.1:${port}，exec 累积到 ${path.relative(this.root, ctx.execFile)}。`
+      );
+      return { jar: tools.agentJar, port, sessionId: app.id };
+    } catch (err) {
+      const message = friendlyError(err, 'java');
+      this.log(`[覆盖率] 准备失败，本次不启用覆盖率：${message}`);
+      this.coverageContexts.delete(app.id);
+      this.update(app.id, {
+        coverage: { enabled: false, error: message, updatedAt: Date.now() }
+      });
+      void vscode.window.showWarningMessage(`${app.id} 覆盖率不可用：${message}`);
+      return undefined;
+    }
+  }
+
+  /** 把覆盖率状态合并进 AppRuntime；保留既有字段 */
+  private patchCoverage(appId: string, patch: Partial<CoverageState>): void {
+    const current = this.getRuntime(appId).coverage;
+    this.update(appId, {
+      coverage: {
+        enabled: current?.enabled ?? false,
+        ...current,
+        ...patch,
+        updatedAt: Date.now()
+      }
+    });
+  }
+
+  /**
+   * 连 agent 端口 dump 出 exec，再与历史 exec 合并。
+   * 必须在杀进程之前调用：taskkill /F 不会给 JVM 任何收尾机会。
+   */
+  private async dumpCoverage(appId: string): Promise<boolean> {
+    const ctx = this.coverageContexts.get(appId);
+    if (!ctx || this.coverageBusy.has(appId)) {
+      return false;
+    }
+    this.coverageBusy.add(appId);
+    try {
+      const partial = path.join(ctx.dir, `dump-${Date.now()}.exec`);
+      await execText(
+        ctx.java,
+        buildDumpArgs({ cliJar: ctx.cliJar, port: ctx.port, dest: partial }),
+        DUMP_TIMEOUT_MS
+      );
+
+      const files = existsFile(ctx.execFile) ? [ctx.execFile, partial] : [partial];
+      const merged = path.join(ctx.dir, `jacoco-${Date.now()}.tmp`);
+      await execText(
+        ctx.java,
+        buildMergeArgs({ cliJar: ctx.cliJar, files, dest: merged }),
+        MERGE_TIMEOUT_MS
+      );
+      fs.renameSync(merged, ctx.execFile);
+      if (files.length > 1) {
+        // 单次 dump 已并入 jacoco.exec，删掉避免目录里堆小文件
+        try {
+          fs.unlinkSync(partial);
+        } catch {
+          // 删不掉不影响结果
+        }
+      }
+      this.patchCoverage(appId, { execFile: ctx.execFile, error: undefined });
+      this.log(`[覆盖率] ${appId} 已 dump（合并 ${files.length} 份 exec）。`);
+      return true;
+    } catch (err) {
+      const message = friendlyError(err, 'java');
+      this.log(`[覆盖率] ${appId} dump 失败：${message}`);
+      this.patchCoverage(appId, { error: message });
+      return false;
+    } finally {
+      this.coverageBusy.delete(appId);
+    }
+  }
+
+  /** 用累积的 exec 生成 HTML + XML，并把指标写进 runtime.coverage.summary */
+  private async reportCoverage(appId: string): Promise<boolean> {
+    const ctx = this.coverageContexts.get(appId);
+    if (!ctx) {
+      return false;
+    }
+    if (!existsFile(ctx.execFile)) {
+      this.log(`[覆盖率] ${appId} 还没有 exec 数据，先启动应用访问接口后再采样。`);
+      return false;
+    }
+    if (this.coverageBusy.has(appId)) {
+      return false;
+    }
+    this.coverageBusy.add(appId);
+    try {
+      fs.mkdirSync(ctx.htmlDir, { recursive: true });
+      await execText(
+        ctx.java,
+        buildReportArgs({
+          cliJar: ctx.cliJar,
+          exec: ctx.execFile,
+          classfiles: ctx.classfiles,
+          sourcefiles: ctx.sourcefiles,
+          htmlDir: ctx.htmlDir,
+          xmlFile: ctx.xmlFile,
+          name: appId
+        }),
+        REPORT_TIMEOUT_MS
+      );
+      const summary = parseJacocoXml(fs.readFileSync(ctx.xmlFile, 'utf8'));
+      this.patchCoverage(appId, {
+        execFile: ctx.execFile,
+        reportDir: ctx.htmlDir,
+        xmlFile: ctx.xmlFile,
+        summary,
+        error: undefined
+      });
+      this.log(
+        `[覆盖率] ${appId} 行 ${formatRate(summary.line.rate)} / 分支 ${formatRate(
+          summary.branch.rate
+        )} / 类 ${formatRate(summary.clazz.rate)}，报告：${path.relative(
+          this.root,
+          path.join(ctx.htmlDir, 'index.html')
+        )}`
+      );
+      return true;
+    } catch (err) {
+      const message = friendlyError(err, 'java');
+      this.log(`[覆盖率] ${appId} 生成报告失败：${message}`);
+      this.patchCoverage(appId, { error: message });
+      return false;
+    } finally {
+      this.coverageBusy.delete(appId);
+    }
+  }
+
+  /**
+   * 手动采样：运行中先 dump（拿到最新执行数据）再出报告；
+   * 已停止时直接用累积的 exec 重新出一次报告。
+   */
+  async sampleCoverage(appId: string): Promise<boolean> {
+    const ctx = this.coverageContexts.get(appId);
+    if (!ctx) {
+      void vscode.window.showWarningMessage(
+        `${appId} 本次启动未启用覆盖率，请开启覆盖率后重新启动。`
+      );
+      return false;
+    }
+    const running = ['running', 'starting'].includes(this.getRuntime(appId).state);
+    if (running) {
+      await this.dumpCoverage(appId);
+    }
+    const ok = await this.reportCoverage(appId);
+    if (ok) {
+      const summary = this.getRuntime(appId).coverage?.summary;
+      if (summary) {
+        void vscode.window.showInformationMessage(
+          `${appId} 覆盖率：行 ${formatRate(summary.line.rate)}，分支 ${formatRate(
+            summary.branch.rate
+          )}。`
+        );
+      }
+    } else if (!this.getRuntime(appId).coverage?.error) {
+      void vscode.window.showWarningMessage(
+        `${appId} 还没有覆盖率数据，请先启动应用并访问接口。`
+      );
+    }
+    return ok;
+  }
+
+  /** HTML 报告入口（index.html）；尚未生成时返回 undefined */
+  coverageReportFile(appId: string): string | undefined {
+    const ctx = this.coverageContexts.get(appId);
+    const candidates = [
+      ctx ? path.join(ctx.htmlDir, 'index.html') : undefined,
+      this.getRuntime(appId).coverage?.reportDir
+        ? path.join(this.getRuntime(appId).coverage?.reportDir as string, 'index.html')
+        : undefined
+    ].filter((p): p is string => !!p);
+    return candidates.find((p) => existsFile(p));
+  }
+
   /** 终端模式：无法检测就绪，仅负责把命令送进终端 */
   private launchInTerminal(app: BootApp, runLine: string): boolean {
     const terminal = vscode.window.createTerminal({
@@ -394,11 +712,24 @@ export class BootRunner implements vscode.Disposable {
       return;
     }
     this.update(appId, { state: 'stopping' });
+
+    // 覆盖率：必须在杀进程之前 dump —— taskkill /F 不触发 JVM shutdown hook
+    const hasCoverage = this.coverageContexts.has(appId);
+    if (hasCoverage) {
+      this.log(`[覆盖率] ${appId} 结束前 dump 执行数据...`);
+      await this.dumpCoverage(appId);
+    }
+
     this.log(`[停止] 正在结束 ${appId}（pid ${proc.pid}）...`);
     await proc.stop();
     this.processes.delete(appId);
     this.update(appId, { state: 'stopped', pid: undefined, metrics: undefined });
     this.log(`[停止] ${appId} 已结束。`);
+
+    if (hasCoverage) {
+      this.patchCoverage(appId, { enabled: false });
+      await this.reportCoverage(appId);
+    }
   }
 
   async stopAll(): Promise<void> {

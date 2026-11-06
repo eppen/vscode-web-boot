@@ -29,6 +29,7 @@ Web Boot Runner detects both cases and handles them automatically.
 - **launch.json generation** — writes `type: java` configurations for developers who prefer pressing F5.
 - **Readiness detection** — parses the run log for `Started ... in ... seconds`, the actual port, context path, and common failure messages.
 - **Runtime monitoring** — after startup, refreshes JVM heap/GC (via `jstat`) and Tomcat HTTP status every 5 seconds in the tree and tooltip; shows Tomcat thread-pool metrics when Actuator is available.
+- **Runtime coverage (JaCoCo)** — optionally attaches a JaCoCo agent to `spring-boot:run` (tcpserver mode); dumps execution data before the process is killed, merges it across runs, and generates HTML + XML reports with line/branch/class rates shown in the tree and tooltip.
 - **Process-tree stop** — uses `taskkill /T /F` on Windows, so no orphan Java process keeps the port.
 - **Copy launch command** — copies the exact Maven command for use in any terminal.
 
@@ -44,7 +45,7 @@ Web Boot Runner detects both cases and handles them automatically.
 1. Install **Web Boot Runner** from the Marketplace, or sideload the VSIX:
 
    ```bash
-   code --install-extension web-boot-runner-0.1.2.vsix
+   code --install-extension web-boot-runner-0.1.3.vsix
    ```
 
 2. Open the root of your multi-module project.
@@ -60,7 +61,7 @@ monitor-server         dev    :9999   /monitor
 
 - Click a stopped app to run it; click a running app to open it in the browser.
 - Hover a node for inline Run / Debug / Edit or Open / Stop / Restart / Edit buttons.
-- Right-click for profile selection, port override, profile/port/main-class/`-am` editing, moving apps between groups, command copy, and **Reload Resources** on a running app (`mvn process-resources`).
+- Right-click for profile selection, port override, profile/port/main-class/`-am`/coverage editing, moving apps between groups, command copy, **Reload Resources** on a running app (`mvn process-resources`), and **Sample Coverage** / **Open Coverage Report** when coverage is enabled.
 - Drag apps onto a group (or onto the virtual "Ungrouped" bucket) to organize them; group nodes expose start/debug/stop for the whole group.
 - Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output, create group.
 
@@ -72,7 +73,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 运行` (Run) | Start with the remembered profile, port, and main class |
 | `Web Boot: 选择 Profile 运行...` (Run with Profile) | Pick a profile from the module's `application-*.yml` files; clears the remembered port so the profile's own port applies |
 | `Web Boot: 指定端口运行...` (Run with Port) | Override the port and remember it |
-| `Web Boot: 编辑 Profile / 端口 / 主类 / -am...` (Edit) | Edit the remembered profile, port, main class, and `-am` switch without launching; an empty port falls back to the config file, `-am` can follow the global setting or override it per app, and changes apply on the next start |
+| `Web Boot: 编辑 Profile / 端口 / 主类 / -am / 覆盖率...` (Edit) | Edit the remembered profile, port, main class, `-am` switch, and coverage switch without launching; an empty port falls back to the config file, `-am` and coverage can follow the global setting or override it per app, and changes apply on the next start |
 | `Web Boot: 新建分组...` (Create Group) | Create a manual group; drag apps into it afterwards |
 | `Web Boot: 重命名分组...` / `删除分组` (Rename / Delete Group) | Rename or delete a group; deleting only ungroups apps |
 | `Web Boot: 移动到分组...` (Move to Group) | Move an app into a group or back to "Ungrouped" |
@@ -81,6 +82,8 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 停止` (Stop) | End the whole process tree with `taskkill /T /F` |
 | `Web Boot: 重启` (Restart) | Stop, then start again with the remembered profile / port / main class / `-am`; a debug run is restarted in debug mode |
 | `Web Boot: 重新加载资源` (Reload Resources) | Run `mvn process-resources` against a running app to copy resource changes into `target/classes`; does not restart the process, and Stop can interrupt it |
+| `Web Boot: 采样覆盖率` (Sample Coverage) | While running: dump the latest execution data, then generate the report; while stopped: regenerate the report from the accumulated exec. Requires the current run to have the JaCoCo agent attached |
+| `Web Boot: 打开覆盖率报告` (Open Coverage Report) | Open the app's latest HTML report (`index.html`) in the browser |
 | `Web Boot: 在浏览器中打开` (Open) | Build the URL from port and context path |
 | `Web Boot: 复制启动命令` (Copy Command) | Copy the Maven command to the clipboard |
 | `Web Boot: 检查端口冲突` (Check Port Conflicts) | Print every app's effective port and conflict groups in the output channel |
@@ -101,8 +104,11 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.autoOpen` | `false` | Open the browser automatically when the app is ready |
 | `webBoot.javaHome` | empty | Override `JAVA_HOME` for launched processes |
 | `webBoot.extraArgs` | `[]` | Extra JVM arguments, for example `-Xmx2g` |
+| `webBoot.coverage` | `false` | Attach a JaCoCo agent (tcpserver mode) to `spring-boot:run`; dumps execution data before the process is killed and generates HTML + XML reports. Not available in terminal mode |
+| `webBoot.coveragePort` | `6300` | JaCoCo agent tcpserver port; automatically incremented when occupied |
+| `webBoot.coverageJacocoVersion` | `0.8.13` | JaCoCo version (agent and CLI); downloaded via `mvn dependency:get` on first use and cached under `.vscode/web-boot/jacoco/` |
 
-Per-app preferences (profile, port, main class, `buildDependencies`) and manual groups are stored in `.vscode/web-boot.json` inside the workspace. A per-app `buildDependencies` value overrides `webBoot.buildDependencies` for that app only.
+Per-app preferences (profile, port, main class, `buildDependencies`, `coverage`) and manual groups are stored in `.vscode/web-boot.json` inside the workspace. A per-app `buildDependencies` or `coverage` value overrides the global setting for that app only.
 
 ### How it works
 
@@ -111,6 +117,7 @@ Per-app preferences (profile, port, main class, `buildDependencies`) and manual 
 - Deep-merges the base `application.*` file with each `application-<profile>.*` file to resolve the effective `server.port` and `server.servlet.context-path`.
 - Launches `mvn spring-boot:run` and watches the output for `Started ... in ... seconds`; the actual port reported by Tomcat or Netty takes precedence over configuration.
 - While running, locates the Java process via `jps -l` (the Maven pid is a shell, not the JVM), reads heap and GC with `jstat -gc`, probes the app with HTTP `HEAD`, and optionally reads Tomcat thread-pool metrics from Actuator.
+- With coverage enabled, appends a JaCoCo `-javaagent` (tcpserver mode) to `spring-boot:run`; on stop or manual sampling it first runs `jacococli dump` against the agent port, merges the exec with previous runs, and generates HTML + XML reports with `jacococli report`.
 - Stops the entire process tree, preventing orphan Java processes from holding the port.
 
 ### Notes and limitations
@@ -122,6 +129,7 @@ Per-app preferences (profile, port, main class, `buildDependencies`) and manual 
 - **Monitoring needs JDK tools.** `jps` / `jstat` ship with the JDK; with a JRE only, JVM metrics show as unavailable while the Tomcat HTTP status still works.
 - **Actuator metrics use the default path.** A custom `management.server.port` or `management.endpoints.web.base-path` disables the thread-pool display; HTTP probing is unaffected.
 - **Terminal mode has no monitoring.** With `webBoot.runner = terminal`, the Java process is unknown and no JVM / Tomcat metrics are collected.
+- **Coverage needs compiled classes and is unavailable in terminal mode.** The dump/report steps run `java -jar jacococli`; if `target/classes` is missing, coverage is skipped for that run. Only the module's own classes are measured (dependency modules are not included). Coverage preparation failures degrade gracefully: the app still starts without the agent.
 
 ### Support
 
@@ -160,6 +168,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 - **生成 launch.json**：为习惯按 F5 的开发者写入 `type: java` 配置。
 - **就绪检测**：解析启动日志中的 `Started ... in ... seconds`、实际端口、context-path 与常见失败信息。
 - **运行期监控**：启动后每 5 秒刷新 JVM 堆/GC（`jstat`）与 Tomcat HTTP 状态，显示在树节点与悬浮提示；应用暴露 Actuator 时还会显示 Tomcat 线程池。
+- **运行时覆盖率（JaCoCo）**：可选给 `spring-boot:run` 挂 JaCoCo agent（tcpserver 模式），停止 / 采样时先 dump 执行数据再结束进程，多次运行累积合并后生成 HTML + XML 报告，行 / 分支 / 类命中率显示在树节点与悬浮提示。
 - **按进程树停止**：Windows 下使用 `taskkill /T /F`，避免 Java 子进程残留占用端口。
 - **复制启动命令**：把实际执行的 Maven 命令复制到剪贴板，可贴进任意终端。
 
@@ -175,7 +184,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 1. 从插件市场安装 **Web Boot Runner**，或离线安装 VSIX：
 
    ```bash
-   code --install-extension web-boot-runner-0.1.2.vsix
+   code --install-extension web-boot-runner-0.1.3.vsix
    ```
 
 2. 打开多模块项目的根目录。
@@ -203,7 +212,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 运行` | 用记住的 profile、端口与主类启动 |
 | `Web Boot: 选择 Profile 运行...` | 从模块的 `application-*.yml` 中选择 profile；切换时会清掉记住的端口，让新 profile 的配置生效 |
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
-| `Web Boot: 编辑 Profile / 端口 / 主类 / -am...` | 不启动进程，逐项修改记住的 profile、端口、主类与 `-am` 开关；端口留空则回到配置文件的值，主类可选扫描候选或手动输入，`-am` 可选跟随全局或按应用覆盖，运行中的实例重启后生效 |
+| `Web Boot: 编辑 Profile / 端口 / 主类 / -am / 覆盖率...` | 不启动进程，逐项修改记住的 profile、端口、主类、`-am` 开关与覆盖率开关；端口留空则回到配置文件的值，主类可选扫描候选或手动输入，`-am` 与覆盖率均可选跟随全局或按应用覆盖，运行中的实例重启后生效 |
 | `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
 | `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除只解除归类，不删除应用 |
 | `Web Boot: 移动到分组...` | 把应用移入分组或移回「未分组」 |
@@ -212,6 +221,8 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 停止` | 用 `taskkill /T /F` 结束整棵进程树 |
 | `Web Boot: 重启` | 停止后按记住的 profile / 端口 / 主类 / `-am` 重新启动；调试运行的应用仍以调试方式重启 |
 | `Web Boot: 重新加载资源` | 对运行中的应用执行 `mvn process-resources`，把资源改动拷入 `target/classes`；不重启进程，执行中点「停止」可打断 |
+| `Web Boot: 采样覆盖率` | 运行中先 dump 最新执行数据再出报告；已停止时直接用累积的 exec 重新出报告。需要本次启动挂了 JaCoCo agent |
+| `Web Boot: 打开覆盖率报告` | 在浏览器中打开该应用最近一次生成的 HTML 报告（`index.html`） |
 | `Web Boot: 在浏览器中打开` | 按端口与 context-path 拼接地址 |
 | `Web Boot: 复制启动命令` | 将 Maven 命令复制到剪贴板 |
 | `Web Boot: 检查端口冲突` | 在输出通道打印每个应用的有效端口与冲突组 |
@@ -232,8 +243,11 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.autoOpen` | `false` | 就绪后自动打开浏览器 |
 | `webBoot.javaHome` | 空 | 覆盖启动进程的 `JAVA_HOME` |
 | `webBoot.extraArgs` | `[]` | 追加 JVM 参数，例如 `-Xmx2g` |
+| `webBoot.coverage` | `false` | 启动时挂 JaCoCo agent（tcpserver 模式），停止 / 采样时先 dump 再结束进程，生成 HTML + XML 覆盖率报告。终端模式下不可用 |
+| `webBoot.coveragePort` | `6300` | JaCoCo agent 的 tcpserver 端口，被占用时自动递增 |
+| `webBoot.coverageJacocoVersion` | `0.8.13` | JaCoCo 版本（agent 与 CLI），首次启用时 `mvn dependency:get` 下载并缓存到 `.vscode/web-boot/jacoco/` |
 
-每个应用的 profile、端口、主类、`buildDependencies` 偏好与手动分组保存在工作区的 `.vscode/web-boot.json`。应用级 `buildDependencies` 只覆盖该应用，未设置时跟随全局 `webBoot.buildDependencies`。
+每个应用的 profile、端口、主类、`buildDependencies`、`coverage` 偏好与手动分组保存在工作区的 `.vscode/web-boot.json`。应用级 `buildDependencies` / `coverage` 只覆盖该应用，未设置时跟随全局设置。
 
 ### 实现方式
 
@@ -242,6 +256,7 @@ monitor-server         dev    :9999   /monitor
 - 将基础 `application.*` 与每个 `application-<profile>.*` 深合并，解析生效的 `server.port` 与 `server.servlet.context-path`。
 - 通过 `mvn spring-boot:run` 启动，并监听日志中的 `Started ... in ... seconds`；Tomcat 或 Netty 报告的实际端口优先于配置值。
 - 运行中通过 `jps -l` 定位 Java 进程（Maven 的 pid 是 shell，不是 JVM），用 `jstat -gc` 读取堆与 GC，向应用发 HTTP `HEAD` 探活，并在 Actuator 可用时读取 Tomcat 线程池。
+- 启用覆盖率时，在 `spring-boot.run.jvmArguments` 追加 JaCoCo `-javaagent`（tcpserver 模式）；停止或手动采样时先用 `jacococli dump` 连 agent 端口拉取执行数据，与历史 exec 合并后由 `jacococli report` 生成 HTML + XML 报告。
 - 停止时结束整棵进程树，避免 Java 子进程残留占用端口。
 
 ### 说明与限制
@@ -253,6 +268,7 @@ monitor-server         dev    :9999   /monitor
 - **监控依赖 JDK 工具。** `jps` / `jstat` 随 JDK 提供；只有 JRE 时 JVM 指标显示不可用，Tomcat HTTP 状态仍可显示。
 - **Actuator 指标使用默认路径。** 自定义 `management.server.port` 或 `management.endpoints.web.base-path` 时不会显示线程池；HTTP 探活不受影响。
 - **终端模式不监控。** `webBoot.runner = terminal` 时拿不到 Java 进程，不采集 JVM / Tomcat 指标。
+- **覆盖率需要已编译字节码，且终端模式不可用。** dump / 报告通过 `java -jar jacococli` 执行；模块未编译（`target/classes` 不存在）时本次不启用覆盖率，只统计本模块字节码（不含依赖模块）。覆盖率准备失败会降级为「本次不启用」，不影响应用启动。
 
 ### 支持
 
