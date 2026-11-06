@@ -1,0 +1,13 @@
+{
+  // 隐藏 node_modules，不出现在资源管理器与搜索中
+  "files.exclude": {
+    "**/node_modules": true
+  },
+  "search.exclude": {
+    "**/node_modules": true
+  },
+  // 避免文件监听器被 node_modules 拖慢
+  "files.watcherExclude": {
+    "**/node_modules/**": true
+  }
+}
