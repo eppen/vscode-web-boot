@@ -10,4 +10,7 @@ package-lock.json
 **/*.map
 **/*.ts
 nul
+pelican-bike.svg
+*.vsix
+.vscodeignore
 !dist/extension.js

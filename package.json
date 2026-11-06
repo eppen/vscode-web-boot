@@ -2,7 +2,7 @@
   "name": "web-boot-runner",
   "displayName": "Web Boot Runner",
   "description": "在多模块 Maven 工作区中管理 Spring Boot 应用：启动、停止、调试、profile 与端口记忆、端口冲突检测",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "liuhualiang",
   "license": "MIT",
   "icon": "media/icon.png",
