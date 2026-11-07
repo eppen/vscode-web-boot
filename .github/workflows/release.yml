@@ -36,3 +36,22 @@ jobs:
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx vsce publish --no-dependencies --packagePath web-boot-runner.vsix
+
+  # 发布到 Open VSX（open-vsx.org）
+  # 前置条件：
+  #   1. 在 Open VSX 注册与 package.json publisher 一致的命名空间（当前为 liuhualiang）
+  #   2. 在仓库 Secrets 中配置 OPEN_VSX_PAT（open-vsx.org 个人访问令牌）
+  publish-openvsx:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-boot-runner-vsix
+          path: .
+
+      - name: Publish to Open VSX
+        env:
+          OPEN_VSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
+        run: npx -y ovsx@latest publish web-boot-runner.vsix
