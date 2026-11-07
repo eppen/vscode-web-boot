@@ -1,7 +1,7 @@
 {
   "name": "web-boot-runner",
   "displayName": "Web Boot Runner",
-  "description": "在多模块 Maven 工作区中运行、停止、调试 Spring Boot 应用：reactor 感知、profile 端口记忆、端口冲突检测、运行监控与 JaCoCo 覆盖率",
+  "description": "%description%",
   "version": "0.1.5",
   "publisher": "liuhualiang",
   "license": "MIT",
@@ -60,7 +60,7 @@
       "webBoot": [
         {
           "id": "webBoot.apps",
-          "name": "Spring Boot 应用",
+          "name": "%view.apps.name%",
           "icon": "media/web-boot.svg"
         }
       ]
@@ -68,151 +68,151 @@
     "viewsWelcome": [
       {
         "view": "webBoot.apps",
-        "contents": "未发现任何 Spring Boot 应用。\n确认当前工作区根目录包含 pom.xml，然后点击刷新。\n[重新扫描](command:webBoot.refresh)"
+        "contents": "%view.apps.welcome%"
       }
     ],
     "commands": [
       {
         "command": "webBoot.refresh",
-        "title": "刷新应用列表",
+        "title": "%command.refresh%",
         "category": "Web Boot",
         "icon": "$(refresh)"
       },
       {
         "command": "webBoot.run",
-        "title": "运行",
+        "title": "%command.run%",
         "category": "Web Boot",
         "icon": "$(play)"
       },
       {
         "command": "webBoot.runWithProfile",
-        "title": "选择 Profile 运行...",
+        "title": "%command.runWithProfile%",
         "category": "Web Boot",
         "icon": "$(settings-gear)"
       },
       {
         "command": "webBoot.runWithPort",
-        "title": "指定端口运行...",
+        "title": "%command.runWithPort%",
         "category": "Web Boot",
         "icon": "$(plug)"
       },
       {
         "command": "webBoot.edit",
-        "title": "编辑 Profile / 端口 / 主类 / -am / 覆盖率...",
+        "title": "%command.edit%",
         "category": "Web Boot",
         "icon": "$(edit)"
       },
       {
         "command": "webBoot.createGroup",
-        "title": "新建分组...",
+        "title": "%command.createGroup%",
         "category": "Web Boot",
         "icon": "$(new-folder)"
       },
       {
         "command": "webBoot.renameGroup",
-        "title": "重命名分组...",
+        "title": "%command.renameGroup%",
         "category": "Web Boot",
         "icon": "$(edit)"
       },
       {
         "command": "webBoot.deleteGroup",
-        "title": "删除分组",
+        "title": "%command.deleteGroup%",
         "category": "Web Boot",
         "icon": "$(trash)"
       },
       {
         "command": "webBoot.moveAppToGroup",
-        "title": "移动到分组...",
+        "title": "%command.moveAppToGroup%",
         "category": "Web Boot",
         "icon": "$(folder)"
       },
       {
         "command": "webBoot.startGroup",
-        "title": "启动整组",
+        "title": "%command.startGroup%",
         "category": "Web Boot",
         "icon": "$(play)"
       },
       {
         "command": "webBoot.debugGroup",
-        "title": "调试整组",
+        "title": "%command.debugGroup%",
         "category": "Web Boot",
         "icon": "$(debug-alt)"
       },
       {
         "command": "webBoot.stopGroup",
-        "title": "停止整组",
+        "title": "%command.stopGroup%",
         "category": "Web Boot",
         "icon": "$(debug-stop)"
       },
       {
         "command": "webBoot.debug",
-        "title": "调试运行（自动 attach）",
+        "title": "%command.debug%",
         "category": "Web Boot",
         "icon": "$(debug-alt)"
       },
       {
         "command": "webBoot.stop",
-        "title": "停止",
+        "title": "%command.stop%",
         "category": "Web Boot",
         "icon": "$(debug-stop)"
       },
       {
         "command": "webBoot.restart",
-        "title": "重启",
+        "title": "%command.restart%",
         "category": "Web Boot",
         "icon": "$(debug-restart)"
       },
       {
         "command": "webBoot.processResources",
-        "title": "重新加载资源",
+        "title": "%command.processResources%",
         "category": "Web Boot",
         "icon": "$(files)"
       },
       {
         "command": "webBoot.sampleCoverage",
-        "title": "采样覆盖率",
+        "title": "%command.sampleCoverage%",
         "category": "Web Boot",
         "icon": "$(pulse)"
       },
       {
         "command": "webBoot.openCoverageReport",
-        "title": "打开覆盖率报告",
+        "title": "%command.openCoverageReport%",
         "category": "Web Boot",
         "icon": "$(file-media)"
       },
       {
         "command": "webBoot.open",
-        "title": "在浏览器中打开",
+        "title": "%command.open%",
         "category": "Web Boot",
         "icon": "$(globe)"
       },
       {
         "command": "webBoot.copyCommand",
-        "title": "复制启动命令",
+        "title": "%command.copyCommand%",
         "category": "Web Boot",
         "icon": "$(copy)"
       },
       {
         "command": "webBoot.checkPortConflicts",
-        "title": "检查端口冲突",
+        "title": "%command.checkPortConflicts%",
         "category": "Web Boot",
         "icon": "$(warning)"
       },
       {
         "command": "webBoot.killPort",
-        "title": "释放端口（结束占用进程）...",
+        "title": "%command.killPort%",
         "category": "Web Boot",
         "icon": "$(debug-disconnect)"
       },
       {
         "command": "webBoot.generateLaunchJson",
-        "title": "生成 launch.json",
+        "title": "%command.generateLaunchJson%",
         "category": "Web Boot",
         "icon": "$(json)"
       },
       {
         "command": "webBoot.showOutput",
-        "title": "显示输出窗口",
+        "title": "%command.showOutput%",
         "category": "Web Boot",
         "icon": "$(output)"
       }
@@ -494,7 +494,7 @@
         "webBoot.mavenCommand": {
           "type": "string",
           "default": "mvn",
-          "markdownDescription": "Maven 可执行文件。Windows 下可为 `mvn`（插件自动补 `.cmd`），也可填绝对路径。"
+          "markdownDescription": "%config.mavenCommand%"
         },
         "webBoot.preBuild": {
           "type": "string",
@@ -505,28 +505,28 @@
             "install"
           ],
           "enumDescriptions": [
-            "启动前不编译",
-            "启动前 mvn compile（默认，够快且能发现编译错误）",
-            "启动前 mvn package",
-            "启动前 mvn install（依赖模块被其它项目引用时需要）"
+            "%config.preBuild.none%",
+            "%config.preBuild.compile%",
+            "%config.preBuild.package%",
+            "%config.preBuild.install%"
           ],
           "default": "compile",
-          "description": "启动前执行的 Maven 目标。"
+          "description": "%config.preBuild.description%"
         },
         "webBoot.buildDependencies": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "reactor 内启动时是否向 `mvn -pl :模块` 追加 `-am`（同时构建依赖模块）。关闭后只构建目标模块，其依赖需已安装到本地仓库（例如先执行 `mvn install -DskipTests`）。"
+          "markdownDescription": "%config.buildDependencies%"
         },
         "webBoot.monitor": {
           "type": "boolean",
           "default": true,
-          "markdownDescription": "应用启动成功后每 5 秒采集一次运行状态：通过 `jstat` 读取 JVM 堆与 GC，通过 HTTP 探测 Tomcat 存活与响应时间；应用暴露 Actuator 时还会显示 Tomcat 线程池。结果显示在树节点与悬浮提示中。"
+          "markdownDescription": "%config.monitor%"
         },
         "webBoot.debugPort": {
           "type": "number",
           "default": 5005,
-          "description": "调试端口（JDWP）。被占用时自动向上查找空闲端口。"
+          "description": "%config.debugPort%"
         },
         "webBoot.runner": {
           "type": "string",
@@ -535,26 +535,26 @@
             "terminal"
           ],
           "enumDescriptions": [
-            "在「Web Boot」输出通道中运行，可检测启动完成、可精确停止",
-            "在集成终端中运行，便于手工输入，但无法检测启动完成"
+            "%config.runner.outputChannel%",
+            "%config.runner.terminal%"
           ],
           "default": "outputChannel",
-          "description": "启动进程的承载方式。"
+          "description": "%config.runner.description%"
         },
         "webBoot.autoAttach": {
           "type": "boolean",
           "default": true,
-          "description": "调试运行时，应用启动完成后自动 attach 到 JDWP 端口。"
+          "description": "%config.autoAttach%"
         },
         "webBoot.autoOpen": {
           "type": "boolean",
           "default": false,
-          "description": "应用启动完成后自动在浏览器打开访问地址。"
+          "description": "%config.autoOpen%"
         },
         "webBoot.javaHome": {
           "type": "string",
           "default": "",
-          "description": "覆盖启动进程使用的 JAVA_HOME。留空则继承当前环境的 JAVA_HOME。"
+          "description": "%config.javaHome%"
         },
         "webBoot.extraArgs": {
           "type": "array",
@@ -562,22 +562,39 @@
             "type": "string"
           },
           "default": [],
-          "description": "追加到 spring-boot:run 的额外 JVM 参数（每项一条，如 -Xmx2g）。"
+          "description": "%config.extraArgs%"
         },
         "webBoot.coverage": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "启动时给 `spring-boot:run` 挂 JaCoCo agent（tcpserver 模式）：停止或手动采样时先 dump 执行数据再结束进程，多次运行累积合并后生成 HTML + XML 覆盖率报告。终端模式（`webBoot.runner = terminal`）下不可用。"
+          "markdownDescription": "%config.coverage%"
         },
         "webBoot.coveragePort": {
           "type": "number",
           "default": 6300,
-          "description": "JaCoCo agent 的 tcpserver 端口，被占用时自动向上查找空闲端口。"
+          "description": "%config.coveragePort%"
         },
         "webBoot.coverageJacocoVersion": {
           "type": "string",
           "default": "0.8.13",
-          "description": "JaCoCo 版本（agent 与 CLI）。首次启用时通过 mvn dependency:get 下载到本地仓库，并缓存到 .vscode/web-boot/jacoco/。"
+          "description": "%config.coverageJacocoVersion%"
+        },
+        "webBoot.language": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "zh-cn",
+            "en",
+            "ja"
+          ],
+          "enumDescriptions": [
+            "%config.language.auto%",
+            "%config.language.zh-cn%",
+            "%config.language.en%",
+            "%config.language.ja%"
+          ],
+          "default": "auto",
+          "description": "%config.language.description%"
         }
       }
     }
@@ -594,7 +611,8 @@
     "selfcheck:port": "esbuild test/portOwner.ts --bundle --platform=node --format=cjs --outfile=test/.tmp/portOwner.cjs --log-level=error && node test/.tmp/portOwner.cjs",
     "selfcheck:encoding": "esbuild test/encoding.ts --bundle --platform=node --format=cjs --outfile=test/.tmp/encoding.cjs --log-level=error && node test/.tmp/encoding.cjs",
     "selfcheck:coverage": "esbuild test/coverage.ts --bundle --platform=node --format=cjs --outfile=test/.tmp/coverage.cjs --log-level=error && node test/.tmp/coverage.cjs",
-    "selfcheck:all": "npm run selfcheck && npm run selfcheck:cmd && npm run selfcheck:parse && npm run selfcheck:monitor && npm run selfcheck:proc && npm run selfcheck:port && npm run selfcheck:encoding && npm run selfcheck:coverage",
+    "selfcheck:i18n": "esbuild test/i18n.ts --bundle --platform=node --format=cjs --outfile=test/.tmp/i18n.cjs --log-level=error && node test/.tmp/i18n.cjs",
+    "selfcheck:all": "npm run selfcheck && npm run selfcheck:cmd && npm run selfcheck:parse && npm run selfcheck:monitor && npm run selfcheck:proc && npm run selfcheck:port && npm run selfcheck:encoding && npm run selfcheck:coverage && npm run selfcheck:i18n",
     "vscode:prepublish": "npm run build",
     "package": "npm run build && vsce package --no-dependencies",
     "publish": "npm run typecheck && vsce publish --no-dependencies"

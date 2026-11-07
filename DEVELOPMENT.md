@@ -271,6 +271,21 @@ reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变
 
 用 `suspend=n` 是因为「先 attach 再启动」会把整个启动流程挂住；代价是启动阶段的断点可能错过。
 
+### 多语言（i18n）
+
+界面文案分两处：
+
+- **清单文案**（命令标题、视图名、设置项说明）走 VS Code 原生的 `package.nls.json` / `package.nls.zh-cn.json` / `package.nls.ja.json`。`package.json` 里写 `%command.run%` 这种占位，由 VS Code 按编辑器语言解析，切换语言后需要重新加载窗口。
+- **运行期文案**（输出通道日志、弹窗、输入框、快速选择、树节点与悬浮提示、状态栏）走 `src/i18n`。`locales/zh-cn.ts` 是 key 的唯一来源，`en.ts` / `ja.ts` 用 `Record<MessageKey, string>` 约束，漏写或多写 key 在 `npm run typecheck` 就会报错。
+
+新增文案的流程：
+
+1. 在 `src/i18n/locales/zh-cn.ts` 加 key（`t('xxx.yyy', a, b)` 里用 `{0}` `{1}` 占位）；
+2. 在 `en.ts`、`ja.ts` 补同样 key 的译文，占位符必须一一对应（`npm run selfcheck:i18n` 会校验）；
+3. 清单文案则在三个 `package.nls*.json` 里加同名 key，并在 `package.json` 用 `%key%` 引用（同样由 selfcheck 校验有没有漏）。
+
+`src/i18n/index.ts` 刻意不 import `vscode`：`util/portProcess.ts`、`runner/processManager.ts`、`runner/coverage.ts` 这些纯逻辑文件也要用 `t()`，而它们要在没有 vscode 宿主的自检脚本里跑。语言由 `extension.ts` 在 `activate` 时调用 `initI18n(vscode.env.language, 设置项)` 注入；`webBoot.language` 变更时会重新初始化并重扫一次，让扫描期生成的文案（如 reactorNote）也切换语言。
+
 ## 已知限制
 
 - **终端模式不检测就绪**：`webBoot.runner = terminal` 时只负责把命令送进终端，不会自动 attach；节点会直接显示为运行中，且「停止」不会结束终端里的进程。
@@ -281,6 +296,7 @@ reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变
 - **Actuator 指标使用默认路径**：自定义 `management.server.port` 或 `management.endpoints.web.base-path` 时，Tomcat 线程池不会显示，但 HTTP 探活不受影响。
 - **终端模式不监控**：`webBoot.runner = terminal` 时拿不到 Java 进程，也不会采集 JVM / Tomcat 指标。
 - **覆盖率需要已编译字节码**：dump / 报告用 `java -jar jacococli` 执行（JDK / JRE 均可）；模块未编译（`target/classes` 不存在）时本次不启用覆盖率。终端模式下覆盖率不可用。
+- **界面语言**：`webBoot.language` 只影响本扩展自己的文案；命令标题、视图名、设置项说明来自 `package.nls*.json`，改动后需重新加载窗口才生效。
 
 ## 自检
 
@@ -300,6 +316,7 @@ npm run selfcheck:proc    # 进程树停止后端口是否真正释放
 npm run selfcheck:port    # 端口占用者识别（netstat / lsof / ss 解析）与结束进程
 npm run selfcheck:encoding # 子进程输出编码（UTF-8 / GBK 按行自动识别）
 npm run selfcheck:coverage # JaCoCo agent 参数 / dump / merge / report argv / report.xml 解析
+npm run selfcheck:i18n     # 三语 key / 占位符一致性，package.nls 与 package.json 的 %key% 对应
 ```
 
 也可以一次性设好环境变量，然后跑全部：
@@ -342,6 +359,10 @@ D:\work\tools\vscode-web-boot\
 │  ├─ debug/attach.ts              JDWP attach
 │  ├─ views/appsTreeProvider.ts    侧边栏树
 │  ├─ config/store.ts              .vscode/web-boot.json
+│  ├─ i18n/index.ts                多语言入口（resolveLocale / t / formatMessage）
+│  ├─ i18n/locales/zh-cn.ts        中文语言包（key 的唯一来源）
+│  ├─ i18n/locales/en.ts           英文语言包（Record<MessageKey, string> 约束完整性）
+│  ├─ i18n/locales/ja.ts           日文语言包
 │  ├─ commands/generateLaunchJson.ts
 │  ├─ util/ports.ts                端口探测与冲突统计
 │  ├─ util/portProcess.ts          端口占用者识别与结束（netstat / lsof / ss）
@@ -350,6 +371,7 @@ D:\work\tools\vscode-web-boot\
 ├─ media/                          图标与市场页配图
 ├─ README.md                       插件市场页面（中英双语）
 ├─ CHANGELOG.md                    版本变更记录
+├─ package.nls*.json               清单本地化（默认英文 / zh-cn / ja）
 └─ DEVELOPMENT.md                  本文
 ```
 

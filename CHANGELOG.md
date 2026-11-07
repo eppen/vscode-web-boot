@@ -2,6 +2,18 @@
 
 本扩展遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## Unreleased
+
+### Added
+
+- 界面多语言支持（简体中文 / 英文 / 日文）：新增 `webBoot.language`（`auto` / `zh-cn` / `en` / `ja`），默认跟随 VS Code 显示语言
+- `package.nls*.json` 清单本地化：命令标题、视图名、设置项说明随语言切换
+- `npm run selfcheck:i18n`：校验三份语言包 key 与占位符一致、`package.json` 的 `%key%` 与 nls 文件一一对应
+
+### Changed
+
+- 运行期所有文案（输出通道日志、弹窗、输入框、悬浮提示、树节点描述、状态栏）统一走 `src/i18n` 的 `t()`
+
 ## 0.1.5
 
 面向插件市场的整理，功能无变化。

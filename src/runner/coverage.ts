@@ -14,11 +14,10 @@ import * as os from 'os';
 import * as path from 'path';
 import type { CoverageCounter, CoverageSummary } from '../model/types';
 import { execText, firstLines } from '../util/jdk';
+import { t } from '../i18n';
 
 /** JaCoCo 默认版本（0.8.13，2025-04 发布；支持到 Java 24 的 class 文件） */
 export const DEFAULT_JACOCO_VERSION = '0.8.13';
-
-const MSG_PREFIX = '[覆盖率]';
 
 function ensureDir(dir: string): void {
   fs.mkdirSync(dir, { recursive: true });
@@ -362,7 +361,7 @@ export async function ensureJacocoTools(opts: EnsureToolsOptions): Promise<Jacoc
 
   for (const task of tasks) {
     if (!fileExists(task.source)) {
-      log(`${MSG_PREFIX} 本地仓库缺少 ${task.artifact}，执行 mvn dependency:get 下载...`);
+      log(t('log.jacocoMissing', task.artifact));
       try {
         await execText(
           opts.mvn,
@@ -378,15 +377,19 @@ export async function ensureJacocoTools(opts: EnsureToolsOptions): Promise<Jacoc
         );
       } catch (err) {
         throw new Error(
-          `下载 ${task.artifact} 失败：${firstLines(err instanceof Error ? err.message : String(err))}`
+          t(
+            'error.jacocoDownloadFailed',
+            task.artifact,
+            firstLines(err instanceof Error ? err.message : String(err))
+          )
         );
       }
     }
     if (!fileExists(task.source)) {
-      throw new Error(`未找到 ${task.artifact}（检查 Maven 本地仓库 ${repo}）`);
+      throw new Error(t('error.jacocoNotFound', task.artifact, repo));
     }
     fs.copyFileSync(task.source, task.target);
-    log(`${MSG_PREFIX} 已准备 ${path.basename(task.target)}`);
+    log(t('log.jacocoReady', path.basename(task.target)));
   }
 
   return { version: opts.version, agentJar, cliJar };

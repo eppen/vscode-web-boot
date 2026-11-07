@@ -12,6 +12,7 @@ import * as http from 'http';
 import * as vscode from 'vscode';
 import type { AppMetrics, JvmMetrics, TomcatMetrics } from '../model/types';
 import { execText, resolveJdkTool } from '../util/jdk';
+import { t } from '../i18n';
 
 export const MONITOR_INTERVAL_MS = 5000;
 const HTTP_TIMEOUT_MS = 2500;
@@ -55,7 +56,7 @@ function errorMessage(err: unknown): string {
   if (err instanceof Error) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return '未找到 jps / jstat（请确认使用的是 JDK 而非 JRE）';
+      return t('error.jpsNotFound');
     }
     return err.message;
   }
@@ -130,7 +131,7 @@ export async function readJvmMetrics(jstat: string, javaPid: number): Promise<Jv
   ]);
   const metrics = parseJstatGc(output);
   if (!metrics) {
-    throw new Error('无法解析 jstat 输出');
+    throw new Error(t('error.jstatParse'));
   }
   return metrics;
 }
@@ -170,7 +171,7 @@ function httpProbe(
     }
     req.on('timeout', () => {
       req.destroy();
-      finish({ error: '超时' });
+      finish({ error: t('common.timeout') });
     });
     req.on('error', (err) => finish({ error: err.message }));
     req.end();
@@ -289,14 +290,14 @@ export class MetricsMonitor implements vscode.Disposable {
       const metrics: AppMetrics = { updatedAt: Date.now() };
 
       if (!ctx.mainClass) {
-        metrics.jvmError = '未配置主类，无法定位 Java 进程';
+        metrics.jvmError = t('error.noMainClass');
       } else {
         try {
           if (ctx.javaPid === undefined) {
             ctx.javaPid = await this.findJavaPid(ctx);
           }
           if (ctx.javaPid === undefined) {
-            metrics.jvmError = `未找到主类为 ${ctx.mainClass} 的 Java 进程`;
+            metrics.jvmError = t('error.javaProcessNotFound', ctx.mainClass);
           } else {
             metrics.jvm = await readJvmMetrics(ctx.jstat, ctx.javaPid);
           }

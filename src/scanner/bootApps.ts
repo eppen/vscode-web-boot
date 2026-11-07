@@ -11,6 +11,7 @@ import * as vscode from 'vscode';
 import type { BootApp, MavenModule } from '../model/types';
 import { parseCommentedModules, parsePackaging, readPomArtifactId } from './maven';
 import { readSpringConfig } from './springConfig';
+import { t } from '../i18n';
 
 const MAIN_CLASS_GLOB = '**/src/main/java/**/*Application.java';
 const EXCLUDE_GLOB = '**/{node_modules,target,dist,out,.git}/**';
@@ -117,8 +118,8 @@ export async function scanBootApps(
     if (!reactorModule) {
       const leaf = path.basename(moduleResolved);
       reactorNote = commentedModules.has(leaf)
-        ? '不在 reactor：父 pom 中的 <module> 被注释掉'
-        : '不在 reactor：父 pom 未声明该模块';
+        ? t('reactor.commentedOut')
+        : t('reactor.notDeclared');
     }
 
     apps.push({

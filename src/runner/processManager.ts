@@ -6,6 +6,7 @@
  */
 import { ChildProcess, execFile, spawn } from 'child_process';
 import { TextDecoder } from 'util';
+import { t } from '../i18n';
 
 export interface SpawnOptions {
   cwd: string;
@@ -151,7 +152,7 @@ export function spawnManaged(command: string, options: SpawnOptions): ManagedPro
   };
 
   child.on('error', (err) => {
-    options.onLine(`[启动失败] ${err.message}`);
+    options.onLine(t('log.spawnFailed', err.message));
     handleExit(-1);
   });
   child.on('close', handleExit);

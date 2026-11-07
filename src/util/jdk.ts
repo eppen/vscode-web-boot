@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
+import { t } from '../i18n';
 
 /** 默认命令超时（毫秒） */
 export const JDK_CMD_TIMEOUT_MS = 4000;
@@ -93,7 +94,7 @@ export function friendlyError(err: unknown, toolHint = 'java'): string {
   if (err instanceof Error) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      return `未找到 ${toolHint}（请确认使用的是 JDK 而非 JRE，或配置 webBoot.javaHome）`;
+      return t('error.toolNotFound', toolHint);
     }
     return err.message;
   }

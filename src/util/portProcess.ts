@@ -14,6 +14,7 @@
  * 不依赖 vscode，便于用自检脚本单独验证解析逻辑。
  */
 import { execFile } from 'child_process';
+import { t } from '../i18n';
 
 /** 占用某端口的进程（同一 PID 只保留一条） */
 export interface PortOwner {
@@ -342,7 +343,7 @@ function isAlive(pid: number): boolean {
 /** 结束单个进程（Windows 结束整棵进程树） */
 export async function killProcessTree(pid: number): Promise<{ ok: boolean; error?: string }> {
   if (!Number.isInteger(pid) || pid <= 0) {
-    return { ok: false, error: `非法 pid：${pid}` };
+    return { ok: false, error: t('error.invalidPid', pid) };
   }
   if (process.platform === 'win32') {
     try {
@@ -379,7 +380,7 @@ export async function killProcessTree(pid: number): Promise<{ ok: boolean; error
   for (let i = 0; i < 20 && isAlive(pid); i++) {
     await sleep(100);
   }
-  return isAlive(pid) ? { ok: false, error: 'SIGKILL 后进程仍存在' } : { ok: true };
+  return isAlive(pid) ? { ok: false, error: t('error.processAliveAfterSigkill') } : { ok: true };
 }
 
 /** 结束一组占用者，返回成功 / 失败清单 */
@@ -390,7 +391,7 @@ export async function killPortOwners(owners: PortOwner[]): Promise<KillResult> {
     if (r.ok) {
       result.killed.push(owner.pid);
     } else {
-      result.failed.push({ pid: owner.pid, error: r.error ?? '未知错误' });
+      result.failed.push({ pid: owner.pid, error: r.error ?? t('common.unknownError') });
     }
   }
   return result;
@@ -398,5 +399,5 @@ export async function killPortOwners(owners: PortOwner[]): Promise<KillResult> {
 
 /** 一行摘要：`java.exe (pid 1234)`，用于确认对话框标题 */
 export function formatOwner(owner: PortOwner): string {
-  return `${owner.name || '未知进程'} (pid ${owner.pid})`;
+  return `${owner.name || t('common.unknownProcess')} (pid ${owner.pid})`;
 }

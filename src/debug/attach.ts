@@ -5,6 +5,7 @@
  * 代价是启动阶段的断点可能错过，这与 tasks.json 里现成的调试方案一致。
  */
 import * as vscode from 'vscode';
+import { t } from '../i18n';
 
 export async function attachToApp(appId: string, debugPort: number): Promise<boolean> {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -21,7 +22,7 @@ export async function attachToApp(appId: string, debugPort: number): Promise<boo
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     void vscode.window.showWarningMessage(
-      `无法 attach 到 ${appId}（端口 ${debugPort}）：${message}。请确认已安装 Extension Pack for Java。`
+      t('msg.attachFailed', appId, debugPort, message)
     );
     return false;
   }

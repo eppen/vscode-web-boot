@@ -12,11 +12,13 @@ import type {
   AppMetrics,
   AppPreference,
   AppRuntime,
+  AppState,
   BootApp,
   CoverageState
 } from '../model/types';
 import type { PortConflict } from '../util/ports';
 import { buildUrl } from '../runner/command';
+import { t } from '../i18n';
 
 const STATE_ICON: Record<string, vscode.ThemeIcon> = {
   stopped: new vscode.ThemeIcon('circle-outline'),
@@ -25,12 +27,21 @@ const STATE_ICON: Record<string, vscode.ThemeIcon> = {
   stopping: new vscode.ThemeIcon('sync~spin', new vscode.ThemeColor('charts.orange'))
 };
 
-const STATE_LABEL: Record<string, string> = {
-  stopped: '未运行',
-  starting: '启动中',
-  running: '运行中',
-  stopping: '停止中'
-};
+/** 状态文案。做成函数而不是常量表，切换语言后无需重新加载模块。 */
+function stateLabel(state: AppState | string): string {
+  switch (state) {
+    case 'stopped':
+      return t('state.stopped');
+    case 'starting':
+      return t('state.starting');
+    case 'running':
+      return t('state.running');
+    case 'stopping':
+      return t('state.stopping');
+    default:
+      return String(state);
+  }
+}
 
 export class AppTreeItem extends vscode.TreeItem {
   readonly kind = 'app' as const;
@@ -49,13 +60,13 @@ export class AppTreeItem extends vscode.TreeItem {
     this.id = `app:${app.id}`;
 
     const contextPath = runtime.contextPath ?? app.config.contextPaths[profile] ?? app.config.baseContextPath;
-    const stateText = STATE_LABEL[runtime.state] ?? runtime.state;
-    const parts = [profile || '(无 profile)', `:${port}`];
+    const stateText = stateLabel(runtime.state);
+    const parts = [profile || t('common.noProfile'), `:${port}`];
     if (contextPath) {
       parts.push(contextPath);
     }
     if (runtime.state === 'running') {
-      parts.push('运行中');
+      parts.push(t('state.running'));
     } else if (runtime.state === 'starting' || runtime.state === 'stopping') {
       parts.push(stateText);
     }
@@ -76,10 +87,10 @@ export class AppTreeItem extends vscode.TreeItem {
     if (runtime.state === 'running') {
       const url = buildUrl(runtime.port ?? port, contextPath);
       this.command = url
-        ? { command: 'webBoot.open', title: '在浏览器中打开', arguments: [this] }
+        ? { command: 'webBoot.open', title: t('command.openInBrowser'), arguments: [this] }
         : undefined;
     } else if (runtime.state === 'stopped') {
-      this.command = { command: 'webBoot.run', title: '运行', arguments: [this] };
+      this.command = { command: 'webBoot.run', title: t('command.run'), arguments: [this] };
     }
   }
 }
@@ -94,15 +105,15 @@ export class GroupTreeItem extends vscode.TreeItem {
     public readonly conflictPorts: number[] = []
   ) {
     super(
-      groupName ?? '未分组',
+      groupName ?? t('group.ungrouped'),
       apps.length > 0
         ? vscode.TreeItemCollapsibleState.Expanded
         : vscode.TreeItemCollapsibleState.None
     );
     this.id = groupName ? `group:real:${groupName}` : 'group:virtual:ungrouped';
-    this.description = `${apps.length} 个应用${
-      conflictPorts.length > 0 ? ` · 冲突 ${conflictPorts.length} 组` : ''
-    }`;
+    this.description =
+      t('group.appCount', apps.length) +
+      (conflictPorts.length > 0 ? t('group.conflictSuffix', conflictPorts.length) : '');
     this.contextValue = groupName ? 'bootGroup' : 'bootGroup.ungrouped';
     this.iconPath = new vscode.ThemeIcon(
       conflictPorts.length > 0 ? 'warning' : groupName ? 'folder' : 'inbox',
@@ -125,32 +136,42 @@ function buildTooltip(
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
   md.appendMarkdown(`**${app.id}**\n\n`);
-  md.appendMarkdown(`- 模块：\`${app.relDir}\`\n`);
+  md.appendMarkdown(`${t('tree.module', app.relDir)}\n`);
   md.appendMarkdown(
-    `- 启动类：\`${mainClass}\`${mainClass !== app.mainClass ? '（覆盖）' : ''}\n`
+    `${t(
+      'tree.mainClass',
+      mainClass,
+      mainClass !== app.mainClass ? t('common.override') : ''
+    )}\n`
   );
   md.appendMarkdown(
-    `- reactor：${app.inReactor ? '是' : `否（${app.reactorNote ?? '未声明'}）`}\n`
+    `${
+      app.inReactor
+        ? t('tree.inReactor')
+        : t('tree.notInReactor', app.reactorNote ?? t('tree.undeclared'))
+    }\n`
   );
-  md.appendMarkdown(`- profile：\`${profile || '(无)'}\`\n`);
-  md.appendMarkdown(`- 端口：\`${port}\`\n`);
+  md.appendMarkdown(`${t('tree.profile', profile || t('common.noProfile'))}\n`);
+  md.appendMarkdown(`${t('tree.port', port)}\n`);
   if (contextPath) {
-    md.appendMarkdown(`- context-path：\`${contextPath}\`\n`);
+    md.appendMarkdown(`${t('tree.contextPath', contextPath)}\n`);
   }
   if (app.config.profiles.filter((p) => p).length > 0) {
-    md.appendMarkdown(`- 可用 profile：${app.config.profiles.filter((p) => p).join(', ')}\n`);
+    md.appendMarkdown(
+      `${t('tree.availableProfiles', app.config.profiles.filter((p) => p).join(', '))}\n`
+    );
   }
-  md.appendMarkdown(`- 状态：${STATE_LABEL[runtime.state] ?? runtime.state}\n`);
+  md.appendMarkdown(`${t('tree.state', stateLabel(runtime.state))}\n`);
   appendMetricsTooltip(md, runtime.metrics);
   appendCoverageTooltip(md, runtime.coverage);
   if (runtime.pid) {
-    md.appendMarkdown(`- pid：\`${runtime.pid}\`\n`);
+    md.appendMarkdown(`${t('tree.pid', runtime.pid)}\n`);
   }
   if (conflict) {
-    md.appendMarkdown(`\n$(warning) **端口冲突**：${conflict.appIds.join(', ')} 都使用 ${conflict.port}\n`);
+    md.appendMarkdown(`\n${t('tree.portConflict', conflict.appIds.join(', '), conflict.port)}\n`);
   }
   if (runtime.lastCommand) {
-    md.appendMarkdown(`\n启动命令：\n\n\`\`\`\n${runtime.lastCommand}\n\`\`\`\n`);
+    md.appendMarkdown(`\n${t('tree.lastCommand')}\n\n\`\`\`\n${runtime.lastCommand}\n\`\`\`\n`);
   }
   return md;
 }
@@ -166,12 +187,12 @@ function formatMetricsSummary(metrics?: AppMetrics): string | undefined {
   }
   const parts: string[] = [];
   if (metrics.jvm?.heapUsedPercent !== undefined) {
-    parts.push(`堆 ${Math.round(metrics.jvm.heapUsedPercent)}%`);
+    parts.push(t('tree.heap', Math.round(metrics.jvm.heapUsedPercent)));
   }
   const tomcat = metrics.tomcat;
   if (tomcat) {
     if (!tomcat.ok) {
-      parts.push('HTTP 不可达');
+      parts.push(t('tree.httpUnreachable'));
     } else if (tomcat.busyThreads !== undefined && tomcat.maxThreads !== undefined) {
       parts.push(
         `Tomcat ${Math.round(tomcat.busyThreads)}/${Math.round(tomcat.maxThreads)}`
@@ -191,39 +212,46 @@ function appendMetricsTooltip(md: vscode.MarkdownString, metrics?: AppMetrics): 
     const jvm = metrics.jvm;
     const heap =
       jvm.heapUsedK !== undefined && jvm.heapCommittedK !== undefined
-        ? `堆 ${formatMb(jvm.heapUsedK)} / ${formatMb(jvm.heapCommittedK)}${
-            jvm.heapUsedPercent !== undefined
-              ? `（${Math.round(jvm.heapUsedPercent)}%）`
-              : ''
-          }`
-        : '已连接';
+        ? jvm.heapUsedPercent !== undefined
+          ? t(
+              'tree.heapDetail',
+              formatMb(jvm.heapUsedK),
+              formatMb(jvm.heapCommittedK),
+              Math.round(jvm.heapUsedPercent)
+            )
+          : t('tree.heapDetailNoPercent', formatMb(jvm.heapUsedK), formatMb(jvm.heapCommittedK))
+        : t('tree.connected');
     const gc =
       jvm.ygc !== undefined
-        ? `；YGC ${jvm.ygc} 次 / ${(jvm.ygct ?? 0).toFixed(2)}s，FGC ${
-            jvm.fgc ?? 0
-          } 次 / ${(jvm.fgct ?? 0).toFixed(2)}s`
+        ? t(
+            'tree.gcDetail',
+            jvm.ygc,
+            (jvm.ygct ?? 0).toFixed(2),
+            jvm.fgc ?? 0,
+            (jvm.fgct ?? 0).toFixed(2)
+          )
         : '';
-    md.appendMarkdown(`- JVM：${heap}${gc}\n`);
+    md.appendMarkdown(`${t('tree.jvmMetric', heap, gc)}\n`);
   } else if (metrics.jvmError) {
-    md.appendMarkdown(`- JVM：监控不可用（${metrics.jvmError}）\n`);
+    md.appendMarkdown(`${t('tree.jvmUnavailable', metrics.jvmError)}\n`);
   }
   if (metrics.tomcat) {
     const tomcat = metrics.tomcat;
     const http = tomcat.ok
-      ? `HTTP ${tomcat.status ?? '?'}，${tomcat.latencyMs}ms`
-      : `不可达${tomcat.error ? `（${tomcat.error}）` : ''}`;
+      ? t('tree.httpDetail', tomcat.status ?? '?', tomcat.latencyMs ?? 0)
+      : tomcat.error
+        ? t('tree.httpUnreachableDetail', tomcat.error)
+        : t('tree.httpUnreachableNoReason');
     const threads =
       tomcat.busyThreads !== undefined
-        ? `；线程 ${Math.round(tomcat.busyThreads)}${
-            tomcat.maxThreads !== undefined
-              ? `/${Math.round(tomcat.maxThreads)}`
-              : ''
-          }`
+        ? tomcat.maxThreads !== undefined
+          ? t('tree.threads', Math.round(tomcat.busyThreads), Math.round(tomcat.maxThreads))
+          : t('tree.threadsNoMax', Math.round(tomcat.busyThreads))
         : '';
-    md.appendMarkdown(`- Tomcat：${http}${threads}\n`);
+    md.appendMarkdown(`${t('tree.tomcat', http, threads)}\n`);
   }
   md.appendMarkdown(
-    `- 监控更新：${new Date(metrics.updatedAt).toLocaleTimeString()}\n`
+    `${t('tree.metricsUpdated', new Date(metrics.updatedAt).toLocaleTimeString())}\n`
   );
 }
 
@@ -238,7 +266,7 @@ function formatCoverageSummary(coverage?: CoverageState): string | undefined {
   }
   const rate = coverage.summary?.line.rate;
   if (rate !== undefined) {
-    parts.push(`覆盖 ${rate.toFixed(1)}%`);
+    parts.push(t('tree.coverageSummary', rate.toFixed(1)));
   }
   return parts.length > 0 ? parts.join(' · ') : undefined;
 }
@@ -249,26 +277,31 @@ function appendCoverageTooltip(md: vscode.MarkdownString, coverage?: CoverageSta
     return;
   }
   if (coverage.enabled) {
-    md.appendMarkdown(`- 覆盖率：JaCoCo agent 已挂载（tcpserver ${coverage.port ?? '?'}）\n`);
+    md.appendMarkdown(`${t('tree.coverageAttached', coverage.port ?? '?')}\n`);
   }
   const summary = coverage.summary;
   if (summary) {
     const line =
       summary.line.rate !== undefined
-        ? `${summary.line.rate.toFixed(1)}%（${summary.line.covered}/${
+        ? t(
+            'tree.rateWithRatio',
+            summary.line.rate.toFixed(1),
+            summary.line.covered,
             summary.line.covered + summary.line.missed
-          }）`
+          )
         : '--';
     const branch = summary.branch.rate !== undefined ? `${summary.branch.rate.toFixed(1)}%` : '--';
     const clazz = summary.clazz.rate !== undefined ? `${summary.clazz.rate.toFixed(1)}%` : '--';
-    md.appendMarkdown(`- 覆盖率：行 ${line} · 分支 ${branch} · 类 ${clazz}\n`);
-    md.appendMarkdown(`- 报告时间：${new Date(summary.updatedAt).toLocaleString()}\n`);
+    md.appendMarkdown(`${t('tree.coverageRates', line, branch, clazz)}\n`);
+    md.appendMarkdown(
+      `${t('tree.coverageReportTime', new Date(summary.updatedAt).toLocaleString())}\n`
+    );
   }
   if (coverage.reportDir) {
-    md.appendMarkdown(`- 报告：\`${path.join(coverage.reportDir, 'index.html')}\`\n`);
+    md.appendMarkdown(`${t('tree.coverageReport', path.join(coverage.reportDir, 'index.html'))}\n`);
   }
   if (coverage.error) {
-    md.appendMarkdown(`- 覆盖率错误：${coverage.error}\n`);
+    md.appendMarkdown(`${t('tree.coverageError', coverage.error)}\n`);
   }
 }
 
@@ -278,16 +311,21 @@ function buildGroupTooltip(
   conflictPorts: number[]
 ): vscode.MarkdownString {
   const md = new vscode.MarkdownString();
-  md.appendMarkdown(`**${groupName ?? '未分组'}**\n\n`);
-  md.appendMarkdown(`- 应用：${apps.length} 个\n`);
+  md.appendMarkdown(`**${groupName ?? t('group.ungrouped')}**\n\n`);
+  md.appendMarkdown(`${t('tree.groupApps', apps.length)}\n`);
   if (apps.length > 0) {
-    md.appendMarkdown(`- ${apps.map((a) => `\`${a.id}\``).join('、')}\n`);
+    md.appendMarkdown(
+      `${t(
+        'tree.groupAppList',
+        apps.map((a) => `\`${a.id}\``).join(t('common.listSeparator'))
+      )}\n`
+    );
   }
   if (conflictPorts.length > 0) {
-    md.appendMarkdown(`- 端口冲突：${conflictPorts.join(', ')}\n`);
+    md.appendMarkdown(`${t('tree.groupConflicts', conflictPorts.join(', '))}\n`);
   }
   if (groupName) {
-    md.appendMarkdown(`\n拖入应用可加入分组；右键可启动/停止整组。\n`);
+    md.appendMarkdown(`\n${t('tree.groupDragHint')}\n`);
   }
   return md;
 }

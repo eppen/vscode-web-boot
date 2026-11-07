@@ -39,6 +39,7 @@ Web Boot Runner detects both cases and handles them automatically.
 - **Runtime coverage (JaCoCo)** — optionally attaches a JaCoCo agent to `spring-boot:run` (tcpserver mode); dumps execution data before the process is killed, merges it across runs, and generates HTML + XML reports with line/branch/class rates shown in the tree and tooltip.
 - **Process-tree stop** — uses `taskkill /T /F` on Windows, so no orphan Java process keeps the port.
 - **Copy launch command** — copies the exact Maven command for use in any terminal.
+- **Multi-language UI** — English, Simplified Chinese, and Japanese; follows the VS Code display language by default and can be pinned with `webBoot.language`.
 
 ### Requirements
 
@@ -116,6 +117,7 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.coverage` | `false` | Attach a JaCoCo agent (tcpserver mode) to `spring-boot:run`; dumps execution data before the process is killed and generates HTML + XML reports. Not available in terminal mode |
 | `webBoot.coveragePort` | `6300` | JaCoCo agent tcpserver port; automatically incremented when occupied |
 | `webBoot.coverageJacocoVersion` | `0.8.13` | JaCoCo version (agent and CLI); downloaded via `mvn dependency:get` on first use and cached under `.vscode/web-boot/jacoco/` |
+| `webBoot.language` | `auto` | UI language: `auto` (follow the VS Code display language), `zh-cn`, `en`, or `ja` |
 
 Per-app preferences (profile, port, main class, `buildDependencies`, `coverage`) and manual groups are stored in `.vscode/web-boot.json` inside the workspace. A per-app `buildDependencies` or `coverage` value overrides the global setting for that app only.
 
@@ -184,13 +186,15 @@ Web Boot Runner 会自动识别并处理这两种情况。
 - **运行时覆盖率（JaCoCo）**：可选给 `spring-boot:run` 挂 JaCoCo agent（tcpserver 模式），停止 / 采样时先 dump 执行数据再结束进程，多次运行累积合并后生成 HTML + XML 报告，行 / 分支 / 类命中率显示在树节点与悬浮提示。
 - **按进程树停止**：Windows 下使用 `taskkill /T /F`，避免 Java 子进程残留占用端口。
 - **复制启动命令**：把实际执行的 Maven 命令复制到剪贴板，可贴进任意终端。
+- **多语言界面**：简体中文 / 英文 / 日文，默认跟随 VS Code 显示语言，可用 `webBoot.language` 固定。
+- **中 / 日 / 英 三语界面**：默认跟随 VS Code 显示语言，也可用 `webBoot.language` 固定为 `zh-cn` / `en` / `ja`。
 
 ### 环境要求
 
 - VS Code 1.75 或更高版本（Cursor 同样可用）。
 - 扩展可访问 Java 与 Maven（`mvn` 在 `PATH` 中，或配置 `webBoot.mavenCommand`）。
 - 工作区根目录包含 Maven 的 `pom.xml`。
-- 扩展界面目前为中文。
+- 界面支持简体中文 / 英文 / 日文，默认跟随 VS Code 的显示语言。
 
 ### 快速开始
 
@@ -259,6 +263,7 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.coverage` | `false` | 启动时挂 JaCoCo agent（tcpserver 模式），停止 / 采样时先 dump 再结束进程，生成 HTML + XML 覆盖率报告。终端模式下不可用 |
 | `webBoot.coveragePort` | `6300` | JaCoCo agent 的 tcpserver 端口，被占用时自动递增 |
 | `webBoot.coverageJacocoVersion` | `0.8.13` | JaCoCo 版本（agent 与 CLI），首次启用时 `mvn dependency:get` 下载并缓存到 `.vscode/web-boot/jacoco/` |
+| `webBoot.language` | `auto` | 界面语言：`auto`（跟随 VS Code 显示语言）、`zh-cn`、`en`、`ja` |
 
 每个应用的 profile、端口、主类、`buildDependencies`、`coverage` 偏好与手动分组保存在工作区的 `.vscode/web-boot.json`。应用级 `buildDependencies` / `coverage` 只覆盖该应用，未设置时跟随全局设置。
 

@@ -29,6 +29,7 @@ import { MetricsMonitor } from './monitor';
 import { spawnManaged, type ManagedProcess } from './processManager';
 import { findFreePort } from '../util/ports';
 import { execText, friendlyError, resolveJdkTool } from '../util/jdk';
+import { t } from '../i18n';
 
 const READY_TIMEOUT_MS = 240_000;
 /** dump / merge / report 各自的超时：dump 要连 agent，report 要扫字节码 */
@@ -150,7 +151,7 @@ export class BootRunner implements vscode.Disposable {
   /** 启动一个应用；返回是否成功进入 running */
   async launch(app: BootApp, spec: LaunchSpec): Promise<boolean> {
     if (this.isBusy(app.id)) {
-      void vscode.window.showWarningMessage(`${app.id} 正在运行或启动中，请先停止。`);
+      void vscode.window.showWarningMessage(t('msg.busy', app.id));
       return false;
     }
     this.cancelled.delete(app.id);
@@ -178,7 +179,7 @@ export class BootRunner implements vscode.Disposable {
     // 覆盖率 agent：确认工具就绪后拿到 agent jar 与 tcpserver 端口
     let coverageAgent: CoverageAgentSpec | undefined;
     if (coverageWanted && runner === 'terminal') {
-      this.log('[覆盖率] 终端模式下无法 dump（拿不到 agent 端口与进程生命周期），本次不启用覆盖率。');
+      this.log(t('log.coverageTerminalUnsupported'));
     } else if (coverageWanted) {
       coverageAgent = await this.prepareCoverage(app, cfg, mavenCommand);
     }
@@ -197,10 +198,12 @@ export class BootRunner implements vscode.Disposable {
       env.JAVA_HOME = javaHome;
     }
 
-    this.logSection(`${app.id}  ${spec.profile || '(无 profile)'}  ${plan.runLine}`);
+    this.logSection(
+      `${app.id}  ${spec.profile || t('common.noProfile')}  ${plan.runLine}`
+    );
     if (app.reactorNote) {
-      this.log(`[提示] ${app.reactorNote}，将使用 -f 单独启动。`);
-      this.log('[提示] 若报依赖缺失，请先在根目录执行 mvn install -DskipTests。');
+      this.log(t('log.reactorNote', app.reactorNote));
+      this.log(t('log.installHint'));
     }
 
     if (runner === 'terminal') {
@@ -211,24 +214,24 @@ export class BootRunner implements vscode.Disposable {
 
     // 1) 预编译（可被「停止」打断）
     if (plan.preBuild && plan.preBuildLine) {
-      this.log(`[1/2] 预编译：${plan.preBuildLine}`);
+      this.log(t('log.preBuild', plan.preBuildLine));
       this.update(app.id, { state: 'starting', profile: spec.profile, debug: spec.debug, lastCommand: plan.runLine });
       const code = await this.runTracked(app.id, plan.preBuildLine, env);
       if (this.cancelled.delete(app.id)) {
-        this.log('[取消] 预编译阶段被停止，已取消启动。');
+        this.log(t('log.preBuildCancelled'));
         this.update(app.id, { state: 'stopped' });
         return false;
       }
       if (code !== 0) {
-        this.log(`[失败] 预编译退出码 ${code}，已中止启动。`);
+        this.log(t('log.preBuildFailed', code));
         this.update(app.id, { state: 'stopped' });
-        void vscode.window.showErrorMessage(`${app.id} 预编译失败（退出码 ${code}），详见 Web Boot 输出。`);
+        void vscode.window.showErrorMessage(t('msg.preBuildFailed', app.id, code));
         return false;
       }
     }
 
     // 2) 启动
-    this.log(`[2/2] 启动：${plan.runLine}`);
+    this.log(t('log.starting', plan.runLine));
     return this.startProcess(app, finalSpec, plan.runLine, env, {
       debugPort,
       autoAttach,
@@ -300,14 +303,12 @@ export class BootRunner implements vscode.Disposable {
             sawFailure = true;
           }
           if (signals.portInUse) {
-            this.log(
-              '[提示] 端口被占用。可用「释放端口（结束占用进程）...」结束占用者，或用「指定端口运行...」换一个端口。'
-            );
+            this.log(t('log.portInUseHint'));
           }
           if (signals.skipped) {
             sawFailure = true;
-            this.log('[失败] spring-boot:run 被跳过：pom 中 spring-boot.run.skip=true 且未被命令行覆盖。');
-            this.log('        请在模块 pom 的 <properties> 中加 <spring-boot.run.skip>false</spring-boot.run.skip>。');
+            this.log(t('log.runSkipped'));
+            this.log(t('log.runSkippedHint'));
           }
 
           if (!ready && signals.ready) {
@@ -320,7 +321,9 @@ export class BootRunner implements vscode.Disposable {
               startedAt: Date.now(),
               pid: proc.pid
             });
-            this.log(`[就绪] ${app.id} 已在 http://localhost:${port}${detectedContextPath} 启动。`);
+            this.log(
+              t('log.ready', app.id, `http://localhost:${port}${detectedContextPath}`)
+            );
 
             if (opts.monitor) {
               this.monitor.start(app.id, {
@@ -348,7 +351,7 @@ export class BootRunner implements vscode.Disposable {
           }
           this.processes.delete(app.id);
           this.monitor.stop(app.id);
-          this.log(`[退出] ${app.id} 进程结束（退出码 ${code ?? 'unknown'}）。`);
+          this.log(t('log.exited', app.id, code ?? 'unknown'));
           this.update(app.id, { state: 'stopped', pid: undefined, metrics: undefined });
           // 进程已退出：agent 端口随之关闭，本次运行的覆盖率标记为未启用，
           // 但保留上次的汇总指标与报告路径，树节点仍能看到结果。
@@ -362,9 +365,9 @@ export class BootRunner implements vscode.Disposable {
           }
 
           if (!ready && !settled) {
-            const reason = sawFailure ? '启动失败' : '进程已退出';
-            this.log(`[失败] ${app.id} ${reason}。请查看上方日志定位原因。`);
-            void vscode.window.showErrorMessage(`${app.id} ${reason}（退出码 ${code ?? 'unknown'}）。`);
+            const reason = sawFailure ? t('common.startFailed') : t('common.processExited');
+            this.log(t('log.startFailedDetail', app.id, reason));
+            void vscode.window.showErrorMessage(t('msg.startFailed', app.id, reason, code ?? 'unknown'));
           }
           finish(ready);
         }
@@ -374,10 +377,8 @@ export class BootRunner implements vscode.Disposable {
 
       const watchdog = setTimeout(() => {
         if (!ready) {
-          this.log(`[警告] ${app.id} 超过 ${READY_TIMEOUT_MS / 1000}s 仍未检测到就绪日志，可在输出窗口继续观察。`);
-          void vscode.window.showWarningMessage(
-            `${app.id} 启动超时，未见 Spring Boot 就绪日志，请查看「Web Boot」输出窗口。`
-          );
+          this.log(t('log.readyTimeout', app.id, READY_TIMEOUT_MS / 1000));
+          void vscode.window.showWarningMessage(t('msg.readyTimeout', app.id));
         }
       }, READY_TIMEOUT_MS);
       this.timers.set(app.id, watchdog);
@@ -405,7 +406,7 @@ export class BootRunner implements vscode.Disposable {
    */
   async processResources(app: BootApp, spec: LaunchSpec): Promise<boolean> {
     if (this.resourcesRunning.has(app.id)) {
-      void vscode.window.showWarningMessage(`${app.id} 正在重新加载资源，请稍候。`);
+      void vscode.window.showWarningMessage(t('msg.resourcesBusy', app.id));
       return false;
     }
 
@@ -423,21 +424,19 @@ export class BootRunner implements vscode.Disposable {
       env.JAVA_HOME = javaHome;
     }
 
-    this.logSection(`${app.id}  重新加载资源  ${command}`);
+    this.logSection(t('log.reloadingResources', app.id, command));
     this.resourcesRunning.add(app.id);
     try {
       const code = await this.runTracked(app.id, command, env);
       if (code === 0) {
-        this.log(`[资源] ${app.id} 资源已更新。`);
+        this.log(t('log.resourcesUpdated', app.id));
         return true;
       }
       if (this.cancelled.has(app.id)) {
-        this.log(`[资源] ${app.id} 资源重载被停止。`);
+        this.log(t('log.resourcesStopped', app.id));
       } else {
-        this.log(`[失败] process-resources 退出码 ${code}。`);
-        void vscode.window.showErrorMessage(
-          `${app.id} 重新加载资源失败（退出码 ${code}），详见 Web Boot 输出。`
-        );
+        this.log(t('log.processResourcesFailed', code));
+        void vscode.window.showErrorMessage(t('msg.processResourcesFailed', app.id, code));
       }
       return false;
     } finally {
@@ -470,9 +469,7 @@ export class BootRunner implements vscode.Disposable {
       });
       const classfiles = [path.join(app.dir, 'target', 'classes')].filter(existsDir);
       if (classfiles.length === 0) {
-        throw new Error(
-          `未找到 ${app.relDir}/target/classes，覆盖率需要已编译的字节码（预编译为 none 时请先手动编译）`
-        );
+        throw new Error(t('error.coverageNoClasses', app.relDir));
       }
       const sourcefiles = [path.join(app.dir, 'src', 'main', 'java')].filter(existsDir);
       const port = await findFreePort(cfg.get<number>('coveragePort', 6300));
@@ -506,17 +503,23 @@ export class BootRunner implements vscode.Disposable {
         }
       });
       this.log(
-        `[覆盖率] ${app.id} 挂载 JaCoCo ${version} agent：tcpserver 127.0.0.1:${port}，exec 累积到 ${path.relative(this.root, ctx.execFile)}。`
+        t(
+          'log.coverageAttached',
+          app.id,
+          version,
+          port,
+          path.relative(this.root, ctx.execFile)
+        )
       );
       return { jar: tools.agentJar, port, sessionId: app.id };
     } catch (err) {
       const message = friendlyError(err, 'java');
-      this.log(`[覆盖率] 准备失败，本次不启用覆盖率：${message}`);
+      this.log(t('log.coveragePrepareFailed', message));
       this.coverageContexts.delete(app.id);
       this.update(app.id, {
         coverage: { enabled: false, error: message, updatedAt: Date.now() }
       });
-      void vscode.window.showWarningMessage(`${app.id} 覆盖率不可用：${message}`);
+      void vscode.window.showWarningMessage(t('msg.coverageUnavailable', app.id, message));
       return undefined;
     }
   }
@@ -569,11 +572,11 @@ export class BootRunner implements vscode.Disposable {
         }
       }
       this.patchCoverage(appId, { execFile: ctx.execFile, error: undefined });
-      this.log(`[覆盖率] ${appId} 已 dump（合并 ${files.length} 份 exec）。`);
+      this.log(t('log.coverageDumped', appId, files.length));
       return true;
     } catch (err) {
       const message = friendlyError(err, 'java');
-      this.log(`[覆盖率] ${appId} dump 失败：${message}`);
+      this.log(t('log.coverageDumpFailed', appId, message));
       this.patchCoverage(appId, { error: message });
       return false;
     } finally {
@@ -588,7 +591,7 @@ export class BootRunner implements vscode.Disposable {
       return false;
     }
     if (!existsFile(ctx.execFile)) {
-      this.log(`[覆盖率] ${appId} 还没有 exec 数据，先启动应用访问接口后再采样。`);
+      this.log(t('log.coverageNoExec', appId));
       return false;
     }
     if (this.coverageBusy.has(appId)) {
@@ -619,17 +622,19 @@ export class BootRunner implements vscode.Disposable {
         error: undefined
       });
       this.log(
-        `[覆盖率] ${appId} 行 ${formatRate(summary.line.rate)} / 分支 ${formatRate(
-          summary.branch.rate
-        )} / 类 ${formatRate(summary.clazz.rate)}，报告：${path.relative(
-          this.root,
-          path.join(ctx.htmlDir, 'index.html')
-        )}`
+        t(
+          'log.coverageReport',
+          appId,
+          formatRate(summary.line.rate),
+          formatRate(summary.branch.rate),
+          formatRate(summary.clazz.rate),
+          path.relative(this.root, path.join(ctx.htmlDir, 'index.html'))
+        )
       );
       return true;
     } catch (err) {
       const message = friendlyError(err, 'java');
-      this.log(`[覆盖率] ${appId} 生成报告失败：${message}`);
+      this.log(t('log.coverageReportFailed', appId, message));
       this.patchCoverage(appId, { error: message });
       return false;
     } finally {
@@ -644,9 +649,7 @@ export class BootRunner implements vscode.Disposable {
   async sampleCoverage(appId: string): Promise<boolean> {
     const ctx = this.coverageContexts.get(appId);
     if (!ctx) {
-      void vscode.window.showWarningMessage(
-        `${appId} 本次启动未启用覆盖率，请开启覆盖率后重新启动。`
-      );
+      void vscode.window.showWarningMessage(t('msg.coverageNotEnabled', appId));
       return false;
     }
     const running = ['running', 'starting'].includes(this.getRuntime(appId).state);
@@ -658,15 +661,16 @@ export class BootRunner implements vscode.Disposable {
       const summary = this.getRuntime(appId).coverage?.summary;
       if (summary) {
         void vscode.window.showInformationMessage(
-          `${appId} 覆盖率：行 ${formatRate(summary.line.rate)}，分支 ${formatRate(
-            summary.branch.rate
-          )}。`
+          t(
+            'msg.coverageResult',
+            appId,
+            formatRate(summary.line.rate),
+            formatRate(summary.branch.rate)
+          )
         );
       }
     } else if (!this.getRuntime(appId).coverage?.error) {
-      void vscode.window.showWarningMessage(
-        `${appId} 还没有覆盖率数据，请先启动应用并访问接口。`
-      );
+      void vscode.window.showWarningMessage(t('msg.coverageNoData', appId));
     }
     return ok;
   }
@@ -692,7 +696,7 @@ export class BootRunner implements vscode.Disposable {
     terminal.show(true);
     terminal.sendText(runLine, true);
     this.update(app.id, { state: 'running', startedAt: Date.now(), lastCommand: runLine });
-    this.log('[提示] 终端模式下无法检测启动完成，也不会自动 attach；需要调试请切换到 outputChannel 模式。');
+    this.log(t('log.terminalModeHint'));
     return true;
   }
 
@@ -703,7 +707,7 @@ export class BootRunner implements vscode.Disposable {
 
     const build = this.buildProcesses.get(appId);
     if (build) {
-      this.log(`[停止] 正在结束 ${appId} 的预编译（pid ${build.pid}）...`);
+      this.log(t('log.stoppingBuild', appId, build.pid));
       await build.stop();
       this.buildProcesses.delete(appId);
     }
@@ -718,15 +722,15 @@ export class BootRunner implements vscode.Disposable {
     // 覆盖率：必须在杀进程之前 dump —— taskkill /F 不触发 JVM shutdown hook
     const hasCoverage = this.coverageContexts.has(appId);
     if (hasCoverage) {
-      this.log(`[覆盖率] ${appId} 结束前 dump 执行数据...`);
+      this.log(t('log.coverageDumpBeforeStop', appId));
       await this.dumpCoverage(appId);
     }
 
-    this.log(`[停止] 正在结束 ${appId}（pid ${proc.pid}）...`);
+    this.log(t('log.stopping', appId, proc.pid));
     await proc.stop();
     this.processes.delete(appId);
     this.update(appId, { state: 'stopped', pid: undefined, metrics: undefined });
-    this.log(`[停止] ${appId} 已结束。`);
+    this.log(t('log.stopped', appId));
 
     if (hasCoverage) {
       this.patchCoverage(appId, { enabled: false });

@@ -37,6 +37,7 @@ import {
 } from './util/portProcess';
 import { buildLaunchConfigs, writeLaunchJson } from './commands/generateLaunchJson';
 import { buildUrl } from './runner/command';
+import { initI18n, t } from './i18n';
 import type { AppPreference, BootApp, LaunchSpec } from './model/types';
 
 let output: vscode.OutputChannel;
@@ -51,7 +52,7 @@ let refreshTimer: NodeJS.Timeout | undefined;
 function rootDir(): string {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) {
-    throw new Error('请先打开包含 pom.xml 的工作区根目录');
+    throw new Error(t('error.noWorkspace'));
   }
   return folder.uri.fsPath;
 }
@@ -89,11 +90,13 @@ function updateStatusBar(): void {
   const running = apps.filter((a) => runner.getRuntime(a.id).state === 'running').length;
   const starting = apps.filter((a) => runner.getRuntime(a.id).state === 'starting').length;
   if (running > 0 || starting > 0) {
-    statusItem.text = `$(circle-filled) Web Boot ${running} 运行中${starting ? ` / ${starting} 启动中` : ''}`;
+    statusItem.text = `$(circle-filled) Web Boot ${t('status.running', running)}${
+      starting ? ` / ${t('status.starting', starting)}` : ''
+    }`;
   } else {
-    statusItem.text = `$(circle-outline) Web Boot ${apps.length} 应用`;
+    statusItem.text = `$(circle-outline) Web Boot ${t('status.appCount', apps.length)}`;
   }
-  statusItem.tooltip = '点击定位到 Web Boot 视图';
+  statusItem.tooltip = t('status.tooltip');
   statusItem.show();
 }
 
@@ -106,12 +109,18 @@ async function scanAndRefresh(): Promise<void> {
     provider.setApps(apps);
     updateStatusBar();
     output.appendLine(
-      `[扫描] ${root}：reactor 模块 ${reactor.size} 个，可启动应用 ${apps.length} 个，端口冲突 ${new Set(conflictMap.keys()).size} 个应用受影响。`
+      t(
+        'log.scanSummary',
+        root,
+        reactor.size,
+        apps.length,
+        new Set(conflictMap.keys()).size
+      )
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    output.appendLine(`[扫描失败] ${message}`);
-    void vscode.window.showErrorMessage(`Web Boot 扫描失败：${message}`);
+    output.appendLine(t('log.scanFailed', message));
+    void vscode.window.showErrorMessage(t('msg.scanFailed', message));
   }
 }
 
@@ -138,9 +147,9 @@ async function pickApp(arg?: unknown, runningOnly = false): Promise<BootApp | un
     : apps;
   if (candidates.length === 0) {
     if (runningOnly) {
-      void vscode.window.showInformationMessage('当前没有正在运行的应用。');
+      void vscode.window.showInformationMessage(t('msg.noRunningApps'));
     } else {
-      void vscode.window.showWarningMessage('未发现可启动的 Spring Boot 应用。');
+      void vscode.window.showWarningMessage(t('msg.noApps'));
     }
     return undefined;
   }
@@ -151,12 +160,17 @@ async function pickApp(arg?: unknown, runningOnly = false): Promise<BootApp | un
       const port = resolvePortValue(a, profile, pref);
       return {
         label: a.id,
-        description: `${profile || '(无 profile)'} · :${port}${a.inReactor ? '' : ' · 不在 reactor'}`,
+        description: `${profile || t('common.noProfile')} · :${port}${
+          a.inReactor ? '' : t('common.notInReactorSuffix')
+        }`,
         detail: a.relDir,
         app: a
       };
     }),
-    { placeHolder: runningOnly ? '选择要停止的应用' : '选择要启动的应用', matchOnDetail: true }
+    {
+      placeHolder: runningOnly ? t('quickPick.pickAppToStop') : t('quickPick.pickAppToStart'),
+      matchOnDetail: true
+    }
   );
   return picked?.app;
 }
@@ -175,7 +189,7 @@ function describePortOwners(owners: PortOwner[]): string {
     return `  · ${formatOwner(owner)}${cmd}`;
   });
   if (owners.length > shown.length) {
-    lines.push(`  · 还有 ${owners.length - shown.length} 个进程`);
+    lines.push(t('tree.moreOwners', owners.length - shown.length));
   }
   return lines.join('\n');
 }
@@ -211,43 +225,72 @@ function findManagedAppOnPort(port: number, exceptAppId?: string): BootApp | und
 /** 结束占用端口的进程，并确认端口真正释放 */
 async function killOwnersAndWait(port: number, owners: PortOwner[]): Promise<boolean> {
   output.appendLine(
-    `[端口] 结束占用 ${port} 的进程：${owners.map(formatOwner).join('、')}`
+    t('log.portKilling', port, owners.map(formatOwner).join(t('common.listSeparator')))
   );
   const result = await killPortOwners(owners);
   for (const pid of result.killed) {
-    output.appendLine(`[端口] 已结束 pid ${pid}。`);
+    output.appendLine(t('log.portKilledPid', pid));
   }
   for (const failed of result.failed) {
-    output.appendLine(`[端口] 结束 pid ${failed.pid} 失败：${failed.error}`);
+    output.appendLine(t('log.portKillPidFailed', failed.pid, failed.error));
   }
   if (result.failed.length > 0) {
     void vscode.window.showErrorMessage(
-      `端口 ${port} 的部分进程结束失败（${result.failed
-        .map((f) => f.pid)
-        .join(', ')}），可能需要管理员权限。`
+      t(
+        'msg.portKillPartialFailed',
+        port,
+        result.failed.map((f) => f.pid).join(', ')
+      )
     );
     return false;
   }
   if (!(await waitPortFree(port))) {
-    void vscode.window.showErrorMessage(`进程已结束，但端口 ${port} 仍被占用。`);
+    void vscode.window.showErrorMessage(t('msg.portStillOccupiedAfterKill', port));
     return false;
   }
-  output.appendLine(`[端口] 端口 ${port} 已释放。`);
+  output.appendLine(t('log.portReleased', port));
   return true;
+}
+
+/** 端口冲突对话框的三个通用选项（按当前语言取文案，回调里用文案反查动作） */
+interface PortButtons {
+  auto: string;
+  keep: string;
+  cancel: string;
+}
+
+function portButtons(): PortButtons {
+  return {
+    auto: t('button.switchPort'),
+    keep: t('button.keepPort'),
+    cancel: t('button.cancel')
+  };
+}
+
+type PortChoice = 'auto' | 'keep';
+
+function toPortChoice(label: string | undefined, buttons: PortButtons): PortChoice | undefined {
+  if (label === buttons.auto) {
+    return 'auto';
+  }
+  if (label === buttons.keep) {
+    return 'keep';
+  }
+  return undefined;
 }
 
 /** 处理「自动换端口 / 仍用该端口 / 取消」三个通用选项 */
 async function resolvePortChoice(
-  choice: string | undefined,
+  choice: PortChoice | undefined,
   app: BootApp,
   desired: number
 ): Promise<number | null> {
-  if (choice === '自动换端口') {
+  if (choice === 'auto') {
     const free = await findFreePort(desired + 1);
-    output.appendLine(`[端口] ${app.id} 由 ${desired} 改为 ${free}。`);
+    output.appendLine(t('log.portSwitched', app.id, desired, free));
     return free;
   }
-  if (choice === '仍用该端口') {
+  if (choice === 'keep') {
     return desired;
   }
   return null;
@@ -269,7 +312,7 @@ async function ensurePort(
   }
   const runningSelf = runner.getRuntime(app.id).state === 'running';
   if (runningSelf) {
-    void vscode.window.showWarningMessage(`${app.id} 已在运行。`);
+    void vscode.window.showWarningMessage(t('msg.appAlreadyRunning', app.id));
     return null;
   }
 
@@ -278,58 +321,61 @@ async function ensurePort(
     ? findManagedAppOnPort(desired, app.id)
     : undefined;
   if (managed) {
+    const buttons = portButtons();
+    const stopAndStart = t('button.stopItAndStart');
     const choice = await vscode.window.showWarningMessage(
-      `${app.id} 配置的端口 ${desired} 正被 Web Boot 中运行的 ${managed.id} 占用。`,
-      '停止它并启动',
-      '自动换端口',
-      '仍用该端口',
-      '取消'
+      t('msg.portUsedByManaged', app.id, desired, managed.id),
+      stopAndStart,
+      buttons.auto,
+      buttons.keep,
+      buttons.cancel
     );
-    if (choice === '停止它并启动') {
-      output.appendLine(`[端口] 停止 ${managed.id}（占用 ${desired}）以便 ${app.id} 启动。`);
+    if (choice === stopAndStart) {
+      output.appendLine(t('log.portStoppingManagedFor', managed.id, desired, app.id));
       await runner.stop(managed.id);
       updateStatusBar();
       if (await waitPortFree(desired)) {
-        output.appendLine(`[端口] ${managed.id} 已停止，端口 ${desired} 已释放。`);
+        output.appendLine(t('log.portFreedByStop', managed.id, desired));
         return desired;
       }
       void vscode.window.showErrorMessage(
-        `${managed.id} 已停止，但端口 ${desired} 仍被占用，已中止启动。`
+        t('msg.portStillUsedAfterStop', managed.id, desired)
       );
       return null;
     }
-    return resolvePortChoice(choice, app, desired);
+    return resolvePortChoice(toPortChoice(choice, buttons), app, desired);
   }
 
   const owners = await findPortOwners(desired);
   if (owners.length === 0) {
-    output.appendLine(
-      `[端口] 端口 ${desired} 被占用，但未能识别占用进程（可能需要管理员权限，或系统缺少 netstat / lsof）。`
-    );
+    output.appendLine(t('log.portOwnerUnknown', desired));
+    const buttons = portButtons();
     const choice = await vscode.window.showWarningMessage(
-      `${app.id} 配置的端口 ${desired} 已被占用，但未能识别占用进程（可能需要管理员权限）。`,
-      '自动换端口',
-      '仍用该端口',
-      '取消'
+      t('msg.portUsedUnknownOwner', app.id, desired),
+      buttons.auto,
+      buttons.keep,
+      buttons.cancel
     );
-    return resolvePortChoice(choice, app, desired);
+    return resolvePortChoice(toPortChoice(choice, buttons), app, desired);
   }
 
+  const buttons = portButtons();
+  const killAndStart = t('button.killAndStart');
   const choice = await vscode.window.showWarningMessage(
-    `${app.id} 配置的端口 ${desired} 已被占用，结束这些进程后启动？`,
+    t('msg.portUsedAskKill', app.id, desired),
     { modal: true, detail: describePortOwners(owners) },
-    '结束并启动',
-    '自动换端口',
-    '仍用该端口',
-    '取消'
+    killAndStart,
+    buttons.auto,
+    buttons.keep,
+    buttons.cancel
   );
-  if (choice === '结束并启动') {
+  if (choice === killAndStart) {
     if (!(await killOwnersAndWait(desired, owners))) {
       return null;
     }
     return desired;
   }
-  return resolvePortChoice(choice, app, desired);
+  return resolvePortChoice(toPortChoice(choice, buttons), app, desired);
 }
 
 /** 独立命令：查询任意端口的占用者并结束（不启动任何应用） */
@@ -344,12 +390,12 @@ async function releasePort(arg?: unknown): Promise<void> {
   }
 
   const input = await vscode.window.showInputBox({
-    prompt: '输入要释放的端口（会结束占用该端口的进程）',
+    prompt: t('prompt.releasePort'),
     value: suggested !== undefined ? String(suggested) : '',
     validateInput: (value) => {
       const port = Number(value.trim());
       if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-        return '请输入 1 - 65535 之间的整数';
+        return t('validate.port');
       }
       return undefined;
     }
@@ -360,52 +406,54 @@ async function releasePort(arg?: unknown): Promise<void> {
   const port = Number(input.trim());
 
   if (await isPortFree(port)) {
-    void vscode.window.showInformationMessage(`端口 ${port} 当前空闲，无需释放。`);
+    void vscode.window.showInformationMessage(t('msg.portAlreadyFree', port));
     return;
   }
 
   const managed = managedAppsStoppable() ? findManagedAppOnPort(port) : undefined;
   if (managed) {
+    const stopIt = t('button.stopIt');
     const choice = await vscode.window.showWarningMessage(
-      `端口 ${port} 由 Web Boot 中运行的 ${managed.id} 占用。`,
+      t('msg.portUsedByManagedSimple', port, managed.id),
       { modal: true },
-      '停止它'
+      stopIt
     );
-    if (choice !== '停止它') {
+    if (choice !== stopIt) {
       return;
     }
-    output.appendLine(`[端口] 停止 ${managed.id}（占用 ${port}）...`);
+    output.appendLine(t('log.portStoppingManaged', managed.id, port));
     await runner.stop(managed.id);
     updateStatusBar();
     if (await waitPortFree(port)) {
-      void vscode.window.showInformationMessage(`端口 ${port} 已释放（已停止 ${managed.id}）。`);
+      void vscode.window.showInformationMessage(
+        t('msg.portReleasedByStopping', port, managed.id)
+      );
     } else {
-      void vscode.window.showErrorMessage(`已停止 ${managed.id}，但端口 ${port} 仍被占用。`);
+      void vscode.window.showErrorMessage(t('msg.portStillUsedAfterStopSimple', managed.id, port));
     }
     return;
   }
 
   const owners = await findPortOwners(port);
   if (owners.length === 0) {
-    void vscode.window.showWarningMessage(
-      `端口 ${port} 被占用，但未能识别占用进程（可能需要管理员权限，或系统缺少 netstat / lsof）。`
-    );
+    void vscode.window.showWarningMessage(t('msg.portUsedUnknownOwnerSimple', port));
     return;
   }
 
+  const killProcess = t('button.killProcess');
   const choice = await vscode.window.showWarningMessage(
-    `端口 ${port} 被占用，确定结束这些进程？此操作不可撤销。`,
+    t('msg.confirmKillPort', port),
     { modal: true, detail: describePortOwners(owners) },
-    '结束进程'
+    killProcess
   );
-  if (choice !== '结束进程') {
+  if (choice !== killProcess) {
     return;
   }
   const ok = await killOwnersAndWait(port, owners);
   if (ok) {
-    void vscode.window.showInformationMessage(`端口 ${port} 已释放。`);
+    void vscode.window.showInformationMessage(t('msg.portReleased', port));
   } else {
-    void vscode.window.showErrorMessage(`端口 ${port} 释放失败，请查看「Web Boot」输出窗口。`);
+    void vscode.window.showErrorMessage(t('msg.portReleaseFailed', port));
   }
 }
 
@@ -451,13 +499,18 @@ async function pickProfile(app: BootApp, current: string): Promise<string | unde
   const items: (vscode.QuickPickItem & { profile?: string; manual?: boolean })[] = available.map(
     (p) => ({
       label: p,
-      description: p === current ? '当前' : p === defaultProfile(app.config) ? 'application.yml 默认' : '',
+      description:
+        p === current
+          ? t('common.current')
+          : p === defaultProfile(app.config)
+            ? t('common.ymlDefault')
+            : '',
       profile: p
     })
   );
-  items.push({ label: '$(edit) 手动输入...', manual: true });
+  items.push({ label: t('quickPick.manualInput'), manual: true });
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: `选择 ${app.id} 的 profile`,
+    placeHolder: t('quickPick.pickProfile', app.id),
     matchOnDescription: false
   });
   if (!picked) {
@@ -467,7 +520,7 @@ async function pickProfile(app: BootApp, current: string): Promise<string | unde
     return picked.profile ?? '';
   }
   const input = await vscode.window.showInputBox({
-    prompt: 'Spring profile（多个用逗号分隔）',
+    prompt: t('prompt.springProfile'),
     value: current
   });
   return input === undefined ? undefined : input.trim();
@@ -488,12 +541,12 @@ async function runWithPort(app: BootApp): Promise<void> {
   const profile = resolveProfile(app, pref);
   const current = resolvePortValue(app, profile, pref);
   const input = await vscode.window.showInputBox({
-    prompt: `输入 ${app.id} 的监听端口`,
+    prompt: t('prompt.inputPort', app.id),
     value: String(current),
     validateInput: (value) => {
       const port = Number(value);
       if (!Number.isInteger(port) || port <= 0 || port > 65535) {
-        return '请输入 1 - 65535 之间的整数';
+        return t('validate.port');
       }
       return undefined;
     }
@@ -520,16 +573,16 @@ async function pickMainClass(app: BootApp, current: string): Promise<string | un
     candidates.map((name) => ({
       label: name,
       description: [
-        name === app.mainClass ? '扫描到的启动类' : '',
-        name === current && name !== app.mainClass ? '当前覆盖' : ''
+        name === app.mainClass ? t('common.scannedMainClass') : '',
+        name === current && name !== app.mainClass ? t('common.currentOverride') : ''
       ]
         .filter(Boolean)
         .join(' · '),
       mainClass: name
     }));
-  items.push({ label: '$(edit) 手动输入...', manual: true });
+  items.push({ label: t('quickPick.manualInput'), manual: true });
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: `选择 ${app.id} 的主类`,
+    placeHolder: t('quickPick.pickMainClass', app.id),
     matchOnDescription: false
   });
   if (!picked) {
@@ -539,16 +592,14 @@ async function pickMainClass(app: BootApp, current: string): Promise<string | un
     return picked.mainClass ?? picked.label;
   }
   const input = await vscode.window.showInputBox({
-    prompt: '主类全限定名，如 com.example.MyApplication',
+    prompt: t('prompt.mainClass'),
     value: current,
     validateInput: (value) => {
       const text = value.trim();
       if (!text) {
-        return '请输入主类全限定名';
+        return t('validate.mainClassRequired');
       }
-      return isJavaFqn(text)
-        ? undefined
-        : '请输入合法的全限定类名，如 com.example.MyApplication';
+      return isJavaFqn(text) ? undefined : t('validate.mainClassFqn');
     }
   });
   return input === undefined ? undefined : input.trim();
@@ -558,9 +609,10 @@ function afterPreferenceChange(app: BootApp, detail: string): void {
   recomputeConflicts();
   provider.refresh();
   updateStatusBar();
-  output.appendLine(`[偏好] ${app.id}: ${detail}`);
-  const suffix = runner.getRuntime(app.id).state === 'running' ? '，重启后生效' : '';
-  void vscode.window.showInformationMessage(`${app.id} 偏好已保存：${detail}${suffix}。`);
+  output.appendLine(t('log.preference', app.id, detail));
+  const suffix =
+    runner.getRuntime(app.id).state === 'running' ? t('common.takesEffectAfterRestart') : '';
+  void vscode.window.showInformationMessage(t('msg.preferenceSaved', app.id, detail, suffix));
 }
 
 type EditField = 'profile' | 'port' | 'mainClass' | 'buildDependencies' | 'coverage';
@@ -584,36 +636,36 @@ async function editPreferences(app: BootApp): Promise<void> {
   const items: (vscode.QuickPickItem & { field: EditField })[] = [
     {
       label: '$(account) Profile',
-      description: `${profile || '(默认)'}${pref.profile ? '（已记住）' : ''}`,
+      description: `${profile || t('common.default')}${pref.profile ? t('common.remembered') : ''}`,
       field: 'profile'
     },
     {
-      label: '$(plug) 端口',
-      description: `${port}${pref.port === undefined ? '（来自配置文件）' : '（覆盖）'}`,
+      label: t('label.port'),
+      description: `${port}${pref.port === undefined ? t('common.fromConfigFile') : t('common.override')}`,
       field: 'port'
     },
     {
-      label: '$(symbol-class) 主类',
-      description: `${mainClass}${pref.mainClass ? '（覆盖）' : '（扫描）'}`,
+      label: t('label.mainClass'),
+      description: `${mainClass}${pref.mainClass ? t('common.override') : t('common.scanned')}`,
       field: 'mainClass'
     },
     {
-      label: '$(package) 构建依赖 (-am)',
-      description: `${effectiveBuildDeps ? '使用 -am' : '不使用 -am'}${
-        pref.buildDependencies === undefined ? '（跟随全局设置）' : '（覆盖）'
+      label: t('label.buildDependencies'),
+      description: `${effectiveBuildDeps ? t('common.useAm') : t('common.noAm')}${
+        pref.buildDependencies === undefined ? t('common.followGlobalMark') : t('common.override')
       }`,
       field: 'buildDependencies'
     },
     {
-      label: '$(pulse) 覆盖率 (JaCoCo)',
-      description: `${effectiveCoverage ? '启用' : '关闭'}${
-        pref.coverage === undefined ? '（跟随全局设置）' : '（覆盖）'
+      label: t('label.coverage'),
+      description: `${effectiveCoverage ? t('common.enabled') : t('common.disabled')}${
+        pref.coverage === undefined ? t('common.followGlobalMark') : t('common.override')
       }`,
       field: 'coverage'
     }
   ];
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: `编辑 ${app.id} 的启动配置`
+    placeHolder: t('quickPick.editPreferences', app.id)
   });
   if (!picked) {
     return;
@@ -625,16 +677,16 @@ async function editPreferences(app: BootApp): Promise<void> {
       return;
     }
     // 换 profile 时清掉端口覆盖，让新 profile 的 yml 端口生效
-    const cleared = pref.port === undefined ? '' : '，已清除端口覆盖';
+    const cleared = pref.port === undefined ? '' : t('common.portOverrideCleared');
     await store.set(app.id, { profile: next, port: undefined });
-    afterPreferenceChange(app, `profile ${next || '(默认)'}${cleared}`);
+    afterPreferenceChange(app, t('detail.profile', next || t('common.default'), cleared));
     return;
   }
 
   if (picked.field === 'port') {
     const configPort = resolvePortFromConfig(app.config, profile);
     const input = await vscode.window.showInputBox({
-      prompt: `输入 ${app.id} 的监听端口（留空使用配置文件中的 ${configPort}）`,
+      prompt: t('prompt.inputPortWithConfig', app.id, configPort),
       value: String(port),
       validateInput: (value) => {
         const text = value.trim();
@@ -643,7 +695,7 @@ async function editPreferences(app: BootApp): Promise<void> {
         }
         const num = Number(text);
         if (!Number.isInteger(num) || num <= 0 || num > 65535) {
-          return '请输入 1 - 65535 之间的整数，或留空使用配置文件端口';
+          return t('validate.portOrEmpty');
         }
         return undefined;
       }
@@ -659,9 +711,11 @@ async function editPreferences(app: BootApp): Promise<void> {
     });
     afterPreferenceChange(
       app,
-      `端口 ${next ?? configPort}${
-        next === undefined || next === configPort ? '（来自配置文件）' : '（覆盖）'
-      }`
+      t(
+        'detail.port',
+        next ?? configPort,
+        next === undefined || next === configPort ? t('common.fromConfigFile') : t('common.override')
+      )
     );
     return;
   }
@@ -669,23 +723,30 @@ async function editPreferences(app: BootApp): Promise<void> {
   if (picked.field === 'buildDependencies') {
     const items: (vscode.QuickPickItem & { value?: boolean; follow?: boolean })[] = [
       {
-        label: '$(settings-gear) 跟随全局设置',
-        description: `当前全局：${globalBuildDeps ? '使用 -am' : '不使用 -am'}`,
+        label: t('label.followGlobal'),
+        description: t(
+          'common.currentGlobal',
+          globalBuildDeps ? t('common.useAm') : t('common.noAm')
+        ),
         follow: true
       },
       {
-        label: '$(check) 使用 -am',
-        description: `同时构建依赖模块${pref.buildDependencies === true ? '（当前）' : ''}`,
+        label: t('label.useAm'),
+        description: `${t('common.useAmDesc')}${
+          pref.buildDependencies === true ? t('common.currentMark') : ''
+        }`,
         value: true
       },
       {
-        label: '$(circle-slash) 不使用 -am',
-        description: `只构建当前模块，依赖需已 install${pref.buildDependencies === false ? '（当前）' : ''}`,
+        label: t('label.noAm'),
+        description: `${t('common.noAmDesc')}${
+          pref.buildDependencies === false ? t('common.currentMark') : ''
+        }`,
         value: false
       }
     ];
     const choice = await vscode.window.showQuickPick(items, {
-      placeHolder: `设置 ${app.id} 是否追加 -am`
+      placeHolder: t('quickPick.setBuildDependencies', app.id)
     });
     if (!choice) {
       return;
@@ -697,13 +758,13 @@ async function editPreferences(app: BootApp): Promise<void> {
     await store.set(app.id, { buildDependencies: value });
     afterPreferenceChange(
       app,
-      `构建依赖 ${
-        value === undefined
-          ? `跟随全局设置（${globalBuildDeps ? '使用' : '不使用'} -am）`
-          : value
-            ? '使用 -am（覆盖）'
-            : '不使用 -am（覆盖）'
-      }`
+      value === undefined
+        ? globalBuildDeps
+          ? t('detail.buildDepsFollowGlobalUse')
+          : t('detail.buildDepsFollowGlobalNo')
+        : value
+          ? t('detail.buildDepsUseOverride')
+          : t('detail.buildDepsNoOverride')
     );
     return;
   }
@@ -711,25 +772,30 @@ async function editPreferences(app: BootApp): Promise<void> {
   if (picked.field === 'coverage') {
     const items: (vscode.QuickPickItem & { value?: boolean; follow?: boolean })[] = [
       {
-        label: '$(settings-gear) 跟随全局设置',
-        description: `当前全局：${globalCoverage ? '启用' : '关闭'}`,
+        label: t('label.followGlobal'),
+        description: t(
+          'common.currentGlobal',
+          globalCoverage ? t('common.enabled') : t('common.disabled')
+        ),
         follow: true
       },
       {
-        label: '$(check) 启用覆盖率',
-        description: `启动时挂 JaCoCo agent，停止/采样时 dump 并生成报告${
-          pref.coverage === true ? '（当前）' : ''
+        label: t('label.enableCoverage'),
+        description: `${t('common.enableCoverageDesc')}${
+          pref.coverage === true ? t('common.currentMark') : ''
         }`,
         value: true
       },
       {
-        label: '$(circle-slash) 关闭覆盖率',
-        description: `不挂 agent${pref.coverage === false ? '（当前）' : ''}`,
+        label: t('label.disableCoverage'),
+        description: `${t('common.disableCoverageDesc')}${
+          pref.coverage === false ? t('common.currentMark') : ''
+        }`,
         value: false
       }
     ];
     const choice = await vscode.window.showQuickPick(items, {
-      placeHolder: `设置 ${app.id} 是否启用覆盖率（JaCoCo）`
+      placeHolder: t('quickPick.setCoverage', app.id)
     });
     if (!choice) {
       return;
@@ -741,13 +807,14 @@ async function editPreferences(app: BootApp): Promise<void> {
     await store.set(app.id, { coverage: value });
     afterPreferenceChange(
       app,
-      `覆盖率 ${
-        value === undefined
-          ? `跟随全局设置（${globalCoverage ? '启用' : '关闭'}）`
-          : value
-            ? '启用（覆盖）'
-            : '关闭（覆盖）'
-      }`
+      value === undefined
+        ? t(
+            'detail.coverageFollowGlobal',
+            globalCoverage ? t('common.enabled') : t('common.disabled')
+          )
+        : value
+          ? t('detail.coverageEnabledOverride')
+          : t('detail.coverageDisabledOverride')
     );
     return;
   }
@@ -757,7 +824,10 @@ async function editPreferences(app: BootApp): Promise<void> {
     return;
   }
   await store.set(app.id, { mainClass: next === app.mainClass ? undefined : next });
-  afterPreferenceChange(app, `主类 ${next}${next === app.mainClass ? '（扫描）' : '（覆盖）'}`);
+  afterPreferenceChange(
+    app,
+    t('detail.mainClass', next, next === app.mainClass ? t('common.scanned') : t('common.override'))
+  );
 }
 
 async function promptGroupName(
@@ -771,26 +841,26 @@ async function promptGroupName(
     validateInput: (text) => {
       const name = text.trim();
       if (!name) {
-        return '请输入分组名称';
+        return t('validate.groupNameRequired');
       }
       const exists = store.getGroups().some(
         (g) => g.name.toLowerCase() === name.toLowerCase() && g.name !== currentName
       );
-      return exists ? '已存在同名分组' : undefined;
+      return exists ? t('validate.groupNameExists') : undefined;
     }
   });
   return input === undefined ? undefined : input.trim();
 }
 
 async function createGroup(): Promise<void> {
-  const name = await promptGroupName('新建分组名称', '');
+  const name = await promptGroupName(t('prompt.newGroupName'), '');
   if (!name) {
     return;
   }
   await store.createGroup(name);
   provider.refresh();
-  output.appendLine(`[分组] 新建分组 ${name}。`);
-  void vscode.window.showInformationMessage(`已新建分组「${name}」，可拖拽应用加入。`);
+  output.appendLine(t('log.groupCreated', name));
+  void vscode.window.showInformationMessage(t('msg.groupCreated', name));
 }
 
 async function renameGroup(item: GroupTreeItem): Promise<void> {
@@ -798,7 +868,7 @@ async function renameGroup(item: GroupTreeItem): Promise<void> {
     return;
   }
   const name = await promptGroupName(
-    `重命名分组「${item.groupName}」`,
+    t('prompt.renameGroup', item.groupName),
     item.groupName,
     item.groupName
   );
@@ -807,39 +877,40 @@ async function renameGroup(item: GroupTreeItem): Promise<void> {
   }
   await store.renameGroup(item.groupName, name);
   provider.refresh();
-  output.appendLine(`[分组] ${item.groupName} 重命名为 ${name}。`);
+  output.appendLine(t('log.groupRenamed', item.groupName, name));
 }
 
 async function deleteGroup(item: GroupTreeItem): Promise<void> {
   if (!item.groupName) {
     return;
   }
+  const deleteButton = t('button.delete');
   const choice = await vscode.window.showWarningMessage(
-    `删除分组「${item.groupName}」？组内 ${item.apps.length} 个应用会变为未分组，应用本身不会被删除。`,
+    t('msg.confirmDeleteGroup', item.groupName, item.apps.length),
     { modal: true },
-    '删除'
+    deleteButton
   );
-  if (choice !== '删除') {
+  if (choice !== deleteButton) {
     return;
   }
   await store.deleteGroup(item.groupName);
   provider.refresh();
-  output.appendLine(`[分组] 删除分组 ${item.groupName}。`);
+  output.appendLine(t('log.groupDeleted', item.groupName));
 }
 
 async function moveAppToGroup(app: BootApp): Promise<void> {
   const current = store.groupOf(app.id);
   const items: (vscode.QuickPickItem & { target?: string; none?: boolean; create?: boolean })[] = [
-    { label: '$(inbox) 未分组', description: current ? '' : '当前', none: true },
+    { label: t('label.ungrouped'), description: current ? '' : t('common.current'), none: true },
     ...store.getGroups().map((g) => ({
       label: `$(folder) ${g.name}`,
-      description: g.name === current ? '当前' : '',
+      description: g.name === current ? t('common.current') : '',
       target: g.name
     })),
-    { label: '$(add) 新建分组...', create: true }
+    { label: t('label.newGroup'), create: true }
   ];
   const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: `把 ${app.id} 移动到分组`
+    placeHolder: t('quickPick.moveToGroup', app.id)
   });
   if (!picked) {
     return;
@@ -847,7 +918,7 @@ async function moveAppToGroup(app: BootApp): Promise<void> {
 
   let target = picked.none ? undefined : picked.target;
   if (picked.create) {
-    const name = await promptGroupName('新建分组名称', '');
+    const name = await promptGroupName(t('prompt.newGroupName'), '');
     if (!name) {
       return;
     }
@@ -859,7 +930,9 @@ async function moveAppToGroup(app: BootApp): Promise<void> {
   }
   await store.assignApps([app.id], target);
   provider.refresh();
-  output.appendLine(`[分组] ${app.id} 移动到${target ? `分组 ${target}` : '未分组'}。`);
+  output.appendLine(
+    target ? t('log.appMovedToGroup', app.id, target) : t('log.appMovedToUngrouped', app.id)
+  );
 }
 
 async function assignAppsToGroup(appIds: string[], groupName: string | undefined): Promise<void> {
@@ -870,7 +943,9 @@ async function assignAppsToGroup(appIds: string[], groupName: string | undefined
   await store.assignApps(appIds, groupName);
   provider.refresh();
   output.appendLine(
-    `[分组] ${appIds.join(', ')} 移动到${groupName ? `分组 ${groupName}` : '未分组'}。`
+    groupName
+      ? t('log.appMovedToGroup', appIds.join(', '), groupName)
+      : t('log.appMovedToUngrouped', appIds.join(', '))
   );
 }
 
@@ -878,29 +953,27 @@ async function startGroup(item: GroupTreeItem, debug = false): Promise<void> {
   if (!item.groupName) {
     return;
   }
-  const action = debug ? '调试' : '启动';
+  const action = debug ? t('group.actionDebug') : t('group.actionStart');
   if (item.apps.length === 0) {
-    void vscode.window.showInformationMessage(`分组「${item.groupName}」还没有应用。`);
+    void vscode.window.showInformationMessage(t('msg.groupEmpty', item.groupName));
     return;
   }
   const toStart = item.apps.filter(
     (app) => runner.getRuntime(app.id).state === 'stopped'
   );
   if (toStart.length === 0) {
-    void vscode.window.showInformationMessage(`分组「${item.groupName}」内的应用都已在运行或启动中。`);
+    void vscode.window.showInformationMessage(t('msg.groupAllRunning', item.groupName));
     return;
   }
 
   output.appendLine(
-    `[分组] ${action}「${item.groupName}」：${toStart.map((a) => a.id).join(', ')}`
+    t('group.startingGroup', action, item.groupName, toStart.map((a) => a.id).join(', '))
   );
   for (const app of toStart) {
     const ok = await launch(app, { debug });
     if (!ok) {
-      output.appendLine(`[分组] ${app.id} ${action}未完成，已中止整组${action}。`);
-      void vscode.window.showWarningMessage(
-        `分组「${item.groupName}」${action}在 ${app.id} 处中止，请查看 Web Boot 输出。`
-      );
+      output.appendLine(t('group.aborted', app.id, action));
+      void vscode.window.showWarningMessage(t('msg.groupAborted', item.groupName, action, app.id));
       return;
     }
   }
@@ -915,12 +988,12 @@ async function stopGroup(item: GroupTreeItem): Promise<void> {
     return state === 'running' || state === 'starting' || state === 'stopping';
   });
   if (running.length === 0) {
-    void vscode.window.showInformationMessage(`分组「${item.groupName}」内没有正在运行的应用。`);
+    void vscode.window.showInformationMessage(t('msg.groupNoRunning', item.groupName));
     return;
   }
 
   output.appendLine(
-    `[分组] 停止「${item.groupName}」：${running.map((a) => a.id).join(', ')}`
+    t('group.stopping', item.groupName, running.map((a) => a.id).join(', '))
   );
   for (const app of running) {
     await stopApp(app);
@@ -935,7 +1008,7 @@ async function stopApp(app: BootApp): Promise<void> {
 /** 对运行中的应用执行 mvn process-resources，重新拷贝资源 */
 async function reloadResources(app: BootApp): Promise<void> {
   if (runner.getRuntime(app.id).state !== 'running') {
-    void vscode.window.showWarningMessage(`${app.id} 未在运行，请先启动后再重新加载资源。`);
+    void vscode.window.showWarningMessage(t('msg.appNotRunningForResources', app.id));
     return;
   }
   const pref = store.get(app.id);
@@ -950,9 +1023,7 @@ async function reloadResources(app: BootApp): Promise<void> {
   };
   const ok = await runner.processResources(app, spec);
   if (ok) {
-    void vscode.window.showInformationMessage(
-      `${app.id} 资源已更新（mvn process-resources）。若未启用 devtools，应用不会自动重启，可右键「重启」。`
-    );
+    void vscode.window.showInformationMessage(t('msg.resourcesUpdated', app.id));
   }
 }
 
@@ -966,17 +1037,17 @@ async function restartApp(app: BootApp): Promise<void> {
 
   if (runtime.state !== 'stopped') {
     if (runnerMode === 'terminal') {
-      void vscode.window.showWarningMessage(
-        '终端模式下无法可靠重启：请先在终端中停止该应用，再重新启动。'
-      );
+      void vscode.window.showWarningMessage(t('msg.restartNotSupportedInTerminal'));
       return;
     }
-    output.appendLine(`[重启] 正在停止 ${app.id}...`);
+    output.appendLine(t('log.restartStopping', app.id));
     await runner.stop(app.id);
     updateStatusBar();
   }
 
-  output.appendLine(`[重启] ${app.id} 已停止，开始${wasDebug ? '调试' : ''}启动。`);
+  output.appendLine(
+    wasDebug ? t('log.restartStartingDebug', app.id) : t('log.restartStarting', app.id)
+  );
   await launch(app, { debug: wasDebug });
 }
 
@@ -988,7 +1059,7 @@ async function openApp(app: BootApp): Promise<void> {
   const contextPath = runtime.contextPath ?? resolveContextPath(app.config, profile);
   const url = buildUrl(port, contextPath);
   if (!url) {
-    void vscode.window.showWarningMessage(`无法确定 ${app.id} 的访问地址。`);
+    void vscode.window.showWarningMessage(t('msg.cannotResolveUrl', app.id));
     return;
   }
   await vscode.env.openExternal(vscode.Uri.parse(url));
@@ -1008,7 +1079,7 @@ async function copyCommand(app: BootApp): Promise<void> {
   };
   const text = runner.describe(spec);
   await vscode.env.clipboard.writeText(text);
-  void vscode.window.showInformationMessage(`已复制 ${app.id} 的启动命令。`);
+  void vscode.window.showInformationMessage(t('msg.commandCopied', app.id));
 }
 
 async function checkPortConflicts(): Promise<void> {
@@ -1018,7 +1089,7 @@ async function checkPortConflicts(): Promise<void> {
   recomputeConflicts();
   output.show(true);
   output.appendLine('');
-  output.appendLine('===== 端口冲突检查 =====');
+  output.appendLine(t('log.portConflictSection'));
   const targets: EffectiveTarget[] = apps.map((app) => {
     const pref = store.get(app.id);
     const profile = resolveProfile(app, pref);
@@ -1032,21 +1103,21 @@ async function checkPortConflicts(): Promise<void> {
   targets.sort((a, b) => a.port - b.port || a.appId.localeCompare(b.appId));
   for (const target of targets) {
     const conflict = conflictMap.get(target.appId);
-    const flag = conflict ? '  <-- 冲突' : '';
+    const flag = conflict ? t('log.portConflictFlag') : '';
     output.appendLine(
       `  ${String(target.port).padStart(5)}  ${target.appId.padEnd(28)} ${target.profile}${flag}`
     );
   }
   const groups = Array.from(new Set(Array.from(conflictMap.values())));
   if (groups.length === 0) {
-    output.appendLine('  未发现端口冲突。');
-    void vscode.window.showInformationMessage('未发现端口冲突。');
+    output.appendLine(t('log.noPortConflicts'));
+    void vscode.window.showInformationMessage(t('msg.noPortConflicts'));
     return;
   }
   const summary = groups
     .map((g) => `${g.port}: ${g.appIds.join(', ')}`)
-    .join('；');
-  void vscode.window.showWarningMessage(`发现 ${groups.length} 组端口冲突 —— ${summary}`);
+    .join(t('common.groupSeparator'));
+  void vscode.window.showWarningMessage(t('msg.portConflictsFound', groups.length, summary));
 }
 
 async function generateLaunchJsonFile(): Promise<void> {
@@ -1060,19 +1131,25 @@ async function generateLaunchJsonFile(): Promise<void> {
     resolvePort: resolvePortValue
   });
   const result = writeLaunchJson(root, configs);
+  const openFile = t('button.openFile');
   void vscode.window
     .showInformationMessage(
-      `已写入 ${result.file}（更新 ${configs.length} 条 Web Boot 配置，保留其它 ${result.kept} 条）。`,
-      '打开文件'
+      t('msg.launchJsonWritten', result.file, configs.length, result.kept),
+      openFile
     )
     .then((choice) => {
-      if (choice === '打开文件') {
+      if (choice === openFile) {
         void vscode.window.showTextDocument(vscode.Uri.file(result.file));
       }
     });
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  // 先确定语言，后面所有文案（包括输出通道名之外的内容）都依赖它
+  initI18n(
+    vscode.env.language,
+    vscode.workspace.getConfiguration('webBoot').get<string>('language', 'auto')
+  );
   output = vscode.window.createOutputChannel('Web Boot');
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
   store = new PreferenceStore(root);
@@ -1197,9 +1274,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     const file = runner.coverageReportFile(app.id);
     if (!file) {
-      void vscode.window.showWarningMessage(
-        `${app.id} 还没有覆盖率报告：请开启覆盖率后启动应用，访问接口再采样。`
-      );
+      void vscode.window.showWarningMessage(t('msg.noCoverageReport', app.id));
       return;
     }
     await vscode.env.openExternal(vscode.Uri.file(file));
@@ -1227,9 +1302,18 @@ export function activate(context: vscode.ExtensionContext): void {
     treeView,
     statusItem,
     vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('webBoot.language')) {
+        initI18n(
+          vscode.env.language,
+          vscode.workspace.getConfiguration('webBoot').get<string>('language', 'auto')
+        );
+        // 重扫一次让 reactorNote 等扫描期文案也换成新语言
+        scheduleRefresh();
+      }
       if (e.affectsConfiguration('webBoot')) {
         recomputeConflicts();
         provider.refresh();
+        updateStatusBar();
       }
     }),
     runner.onDidChangeState(() => {
@@ -1248,7 +1332,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   void scanAndRefresh().then(() => {
     if (apps.length === 0) {
-      output.appendLine('[提示] 未发现可启动应用，请确认工作区根目录（或子目录）包含 pom.xml 与 @SpringBootApplication 启动类。');
+      output.appendLine(t('log.noAppsHint'));
     }
   });
 }
