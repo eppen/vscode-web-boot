@@ -151,8 +151,14 @@ Building from source, the self-check scripts, and the implementation notes live 
 If this extension saved you some time, you can optionally buy the author a coffee via WeChat Pay. Donations are entirely voluntary: they unlock nothing and imply no support commitment.
 
 <p align="center">
-  <img src="media/donate-wechat.png" alt="WeChat Pay QR code" width="260" />
+  <a href="media/donate-wechat.png"><img src="https://img.shields.io/badge/WeChat%20Pay-scan%20to%20support-07C160?style=flat-square&logo=wechat&logoColor=white" alt="WeChat Pay" /></a>
 </p>
+
+<p align="center">
+  <a href="media/donate-wechat.png"><img src="media/donate-wechat.png" alt="WeChat Pay QR code" width="200" /></a>
+</p>
+
+<sub>Ad slot — this page keeps one clearly-labelled sponsor slot, for tools and services a Spring Boot / VS Code developer would actually use. To take it, reach the author through the WeChat QR code above and mention AD. Ads are always marked as ads, carry a plain https link and a static PNG at most, contain no tracking pixels or affiliate links, and never change how this extension behaves.</sub>
 
 ### License
 
@@ -297,8 +303,14 @@ monitor-server         dev    :9999   /monitor
 如果这个扩展帮你省下了时间，可以自愿微信扫码请作者喝杯咖啡。赞助完全自愿，不影响任何功能，也不构成任何形式的服务承诺。
 
 <p align="center">
-  <img src="media/donate-wechat.png" alt="微信打赏二维码" width="180" />
+  <a href="media/donate-wechat.png"><img src="https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1%E6%89%93%E8%B5%8F-%E6%89%AB%E7%A0%81%E6%94%AF%E6%8C%81-07C160?style=flat-square&logo=wechat&logoColor=white" alt="微信打赏" /></a>
 </p>
+
+<p align="center">
+  <a href="media/donate-wechat.png"><img src="media/donate-wechat.png" alt="微信打赏二维码" width="200" /></a>
+</p>
+
+<sub>广告位 — 本页保留一个明确标注的赞助位，只接受 Spring Boot / VS Code 开发者真正用得上的工具或服务。有意投放请扫上方二维码联系作者，并注明 AD。广告一律标注为广告，只接受 https 链接与静态 PNG，不含追踪像素或返利链接，也不影响扩展的任何行为。</sub>
 
 ### 许可
 
