@@ -13,3 +13,4 @@ test/.tmp/
 
 # VS Code 扩展测试宿主
 .vscode-test/
+nul
