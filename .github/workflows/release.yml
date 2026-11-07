@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  # 打包与校验：两个市场共用同一个 VSIX，保证产物一致
+  package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +22,18 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
 
+      # tag 推送时校验 tag 与 package.json 版本一致，避免 tag 与发布版本不一致
+      - name: Verify tag matches package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "package.json: $PKG_VERSION / tag: $GITHUB_REF_NAME"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与 package.json 版本 $PKG_VERSION 不一致"
+            exit 1
+          fi
+
       # 先在本地打包，保证产物可复现，并作为工作流制品保留
       - name: Package VSIX
         run: npx vsce package --no-dependencies --out web-boot-runner.vsix
@@ -31,20 +44,39 @@ jobs:
           name: web-boot-runner-vsix
           path: web-boot-runner.vsix
 
-      # 需要在仓库 Secrets 中配置 VSCE_PAT（Azure DevOps Personal Access Token）
+  # 发布到 Visual Studio Marketplace
+  # 前置条件：在仓库 Secrets 中配置 VSCE_PAT（Azure DevOps Personal Access Token）
+  publish-vsce:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-boot-runner-vsix
+          path: .
+
       - name: Publish to Visual Studio Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx vsce publish --no-dependencies --packagePath web-boot-runner.vsix
+        run: npx -y @vscode/vsce@latest publish --no-dependencies --packagePath web-boot-runner.vsix
 
   # 发布到 Open VSX（open-vsx.org）
   # 前置条件：
   #   1. 在 Open VSX 注册与 package.json publisher 一致的命名空间（当前为 liuhualiang）
   #   2. 在仓库 Secrets 中配置 OPEN_VSX_PAT（open-vsx.org 个人访问令牌）
   publish-openvsx:
-    needs: publish
+    needs: package
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Download VSIX artifact
         uses: actions/download-artifact@v4
         with:
@@ -53,5 +85,7 @@ jobs:
 
       - name: Publish to Open VSX
         env:
-          OPEN_VSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
+          # ovsx CLI 读取的环境变量是 OVSX_PAT（不是 OPEN_VSX_PAT），
+          # 否则会尝试交互式索要 token 并在 CI 中失败
+          OVSX_PAT: ${{ secrets.OPEN_VSX_PAT }}
         run: npx -y ovsx@latest publish web-boot-runner.vsix
