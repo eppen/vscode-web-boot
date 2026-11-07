@@ -189,6 +189,9 @@ export const zhCN = {
   'msg.coverageResult': '{0} 覆盖率：行 {1}，分支 {2}。',
   'msg.coverageNoData': '{0} 还没有覆盖率数据，请先启动应用并访问接口。',
   'msg.attachFailed': '无法 attach 到 {0}（端口 {1}）：{2}。请确认已安装 Extension Pack for Java。',
+  'msg.startSuccess': '{0} 启动成功，访问地址：{1}',
+  'msg.restartSuccess': '{0} 重启成功，访问地址：{1}',
+  'msg.groupStarted': '分组「{0}」的 {1} 个应用已启动。',
 
   // ---------------- 错误 ----------------
   'error.noWorkspace': '请先打开包含 pom.xml 的工作区根目录',

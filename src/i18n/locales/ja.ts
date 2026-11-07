@@ -208,6 +208,9 @@ export const ja: Record<MessageKey, string> = {
     '{0} にはまだカバレッジデータがありません。先にアプリを起動して API にアクセスしてください。',
   'msg.attachFailed':
     '{0} に attach できませんでした（ポート {1}）：{2}。Extension Pack for Java がインストールされているか確認してください。',
+  'msg.startSuccess': '{0} を起動しました。URL：{1}',
+  'msg.restartSuccess': '{0} を再起動しました。URL：{1}',
+  'msg.groupStarted': 'グループ「{0}」の {1} 個のアプリを起動しました。',
 
   // ---------------- エラー ----------------
   'error.noWorkspace': '先に pom.xml を含むワークスペースのルートを開いてください',

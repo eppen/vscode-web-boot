@@ -4,11 +4,14 @@
 
 ## Unreleased
 
+## 0.1.6
+
 ### Added
 
 - 界面多语言支持（简体中文 / 英文 / 日文）：新增 `webBoot.language`（`auto` / `zh-cn` / `en` / `ja`），默认跟随 VS Code 显示语言
 - `package.nls*.json` 清单本地化：命令标题、视图名、设置项说明随语言切换
 - `npm run selfcheck:i18n`：校验三份语言包 key 与占位符一致、`package.json` 的 `%key%` 与 nls 文件一一对应
+- 启动 / 重启完成后弹出带访问地址的成功提示：单应用启动、重启各提示一条（地址取日志探测到的实际端口与 context-path），整组启动只提示一条汇总；失败路径仍走原有报错提示
 
 ### Changed
 

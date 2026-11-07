@@ -204,6 +204,9 @@ export const en: Record<MessageKey, string> = {
     '{0} has no coverage data yet; start the app and call some endpoints first.',
   'msg.attachFailed':
     'Failed to attach to {0} (port {1}): {2}. Make sure the Extension Pack for Java is installed.',
+  'msg.startSuccess': '{0} started successfully. URL: {1}',
+  'msg.restartSuccess': '{0} restarted successfully. URL: {1}',
+  'msg.groupStarted': 'Started {1} app(s) in group "{0}".',
 
   // ---------------- Errors ----------------
   'error.noWorkspace': 'Open a workspace root containing pom.xml first.',

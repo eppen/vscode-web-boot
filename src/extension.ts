@@ -459,7 +459,7 @@ async function releasePort(arg?: unknown): Promise<void> {
 
 async function launch(
   app: BootApp,
-  opts: { debug?: boolean; profile?: string; port?: number; clearPort?: boolean } = {}
+  opts: { debug?: boolean; profile?: string; port?: number; clearPort?: boolean; silent?: boolean } = {}
 ): Promise<boolean> {
   const pref = store.get(app.id);
   const profile = opts.profile ?? pref.profile ?? defaultProfile(app.config);
@@ -488,6 +488,12 @@ async function launch(
     recomputeConflicts();
     provider.refresh();
     updateStatusBar();
+    if (!opts.silent) {
+      const url = appUrl(app);
+      if (url) {
+        void vscode.window.showInformationMessage(t('msg.startSuccess', app.id, url));
+      }
+    }
     return true;
   }
   return false;
@@ -970,13 +976,14 @@ async function startGroup(item: GroupTreeItem, debug = false): Promise<void> {
     t('group.startingGroup', action, item.groupName, toStart.map((a) => a.id).join(', '))
   );
   for (const app of toStart) {
-    const ok = await launch(app, { debug });
+    const ok = await launch(app, { debug, silent: true });
     if (!ok) {
       output.appendLine(t('group.aborted', app.id, action));
       void vscode.window.showWarningMessage(t('msg.groupAborted', item.groupName, action, app.id));
       return;
     }
   }
+  void vscode.window.showInformationMessage(t('msg.groupStarted', item.groupName, toStart.length));
 }
 
 async function stopGroup(item: GroupTreeItem): Promise<void> {
@@ -1048,7 +1055,23 @@ async function restartApp(app: BootApp): Promise<void> {
   output.appendLine(
     wasDebug ? t('log.restartStartingDebug', app.id) : t('log.restartStarting', app.id)
   );
-  await launch(app, { debug: wasDebug });
+  const ok = await launch(app, { debug: wasDebug, silent: true });
+  if (ok) {
+    const url = appUrl(app);
+    if (url) {
+      void vscode.window.showInformationMessage(t('msg.restartSuccess', app.id, url));
+    }
+  }
+}
+
+/** 计算应用访问地址（runtime 实际端口/contextPath 优先，回退配置值）；无法解析返回 undefined */
+function appUrl(app: BootApp): string | undefined {
+  const pref = store.get(app.id);
+  const profile = resolveProfile(app, pref);
+  const runtime = runner.getRuntime(app.id);
+  const port = runtime.port ?? resolvePortValue(app, profile, pref);
+  const contextPath = runtime.contextPath ?? resolveContextPath(app.config, profile);
+  return buildUrl(port, contextPath);
 }
 
 async function openApp(app: BootApp): Promise<void> {
