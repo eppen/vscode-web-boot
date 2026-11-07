@@ -45,6 +45,7 @@ let runner: BootRunner;
 let store: PreferenceStore;
 let provider: AppsTreeProvider;
 let statusItem: vscode.StatusBarItem;
+let treeView: vscode.TreeView<WebBootTreeItem> | undefined;
 let apps: BootApp[] = [];
 let conflictMap = new Map<string, PortConflict>();
 let refreshTimer: NodeJS.Timeout | undefined;
@@ -86,9 +87,36 @@ function recomputeConflicts(): void {
   }
 }
 
+/**
+ * 刷新视图角标：把「运行中 + 启动中」的数量挂在活动栏的 Web Boot 图标上。
+ * 0 个应用在跑时清空角标（VS Code 的 badge 无法隐藏，只能置为 undefined）。
+ */
+function updateViewBadge(running: number, starting: number): void {
+  if (!treeView) {
+    return;
+  }
+  const total = running + starting;
+  if (total <= 0) {
+    treeView.badge = undefined;
+    return;
+  }
+  const parts: string[] = [];
+  if (running > 0) {
+    parts.push(t('status.running', running));
+  }
+  if (starting > 0) {
+    parts.push(t('status.starting', starting));
+  }
+  treeView.badge = { value: total, tooltip: parts.join(' / ') };
+}
+
+/**
+ * 刷新状态栏文本；同时刷新活动栏图标角标（所有状态变化都会走到这里）。
+ */
 function updateStatusBar(): void {
   const running = apps.filter((a) => runner.getRuntime(a.id).state === 'running').length;
   const starting = apps.filter((a) => runner.getRuntime(a.id).state === 'starting').length;
+  updateViewBadge(running, starting);
   if (running > 0 || starting > 0) {
     statusItem.text = `$(circle-filled) Web Boot ${t('status.running', running)}${
       starting ? ` / ${t('status.starting', starting)}` : ''
@@ -1187,7 +1215,7 @@ export function activate(context: vscode.ExtensionContext): void {
     () => store.getGroups()
   );
 
-  const treeView = vscode.window.createTreeView<WebBootTreeItem>('webBoot.apps', {
+  treeView = vscode.window.createTreeView<WebBootTreeItem>('webBoot.apps', {
     treeDataProvider: provider,
     showCollapseAll: true,
     dragAndDropController: new AppsDragAndDropController((appIds, groupName) => {
