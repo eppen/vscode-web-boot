@@ -199,6 +199,17 @@ sample-monitor-server   dev    :9999   /monitor
 
 采集失败只在悬浮提示里注明原因，不会弹窗或中断应用。
 
+### 跨会话接管（重载窗口不丢状态）
+
+运行期状态在每次变更后 400 ms 合并写入 `workspaceState`（键 `webBoot.runtime`），结构见 `src/runner/state.ts`：`appId` / `state` / `pid` / `port` / `contextPath` / `profile` / `debug` / `lastCommand` 以及 JaCoCo 覆盖率上下文。
+
+- `deactivate` 只落盘，不再 `stopAll()`：关闭窗口或退出编辑器不会结束应用。
+- `activate` 扫描完成后调用 `restoreRuntimes()`：逐条 `sanitize`（只接受 `running` / `starting` 且 pid 为正整数的记录，坏数据整体退化为空数组），`isPidAlive` 通过后由 `BootRunner.adopt()` 恢复为运行中；`starting` 且端口已在监听时直接视为 `running`。同时重建 JaCoCo 上下文，接管后仍能 dump / 采样。
+- 接管项没有 `ChildProcess` 句柄，因此：
+  - 输出日志拿不到（需要新日志就「重启」应用）；
+  - 停止走 `killProcessTree(pid)`（Windows `taskkill /T /F`，POSIX 按进程组）；
+  - 每 15 秒巡检一次 pid，进程在外部消失时刷回 `stopped` 并重写快照。
+
 ### 运行时覆盖率（JaCoCo）
 
 `webBoot.coverage = true`（或按应用覆盖）时，启动流程在 `spring-boot.run.jvmArguments` 里追加：
@@ -297,6 +308,7 @@ reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变
 - **终端模式不监控**：`webBoot.runner = terminal` 时拿不到 Java 进程，也不会采集 JVM / Tomcat 指标。
 - **覆盖率需要已编译字节码**：dump / 报告用 `java -jar jacococli` 执行（JDK / JRE 均可）；模块未编译（`target/classes` 不存在）时本次不启用覆盖率。终端模式下覆盖率不可用。
 - **界面语言**：`webBoot.language` 只影响本扩展自己的文案；命令标题、视图名、设置项说明来自 `package.nls*.json`，改动后需重新加载窗口才生效。
+- **接管后拿不到旧日志**：跨会话接管只有 pid，之前的输出不会回放；停止 / 重启正常，但要看日志得重启应用。
 
 ## 自检
 
@@ -317,6 +329,8 @@ npm run selfcheck:port    # 端口占用者识别（netstat / lsof / ss 解析�
 npm run selfcheck:encoding # 子进程输出编码（UTF-8 / GBK 按行自动识别）
 npm run selfcheck:coverage # JaCoCo agent 参数 / dump / merge / report argv / report.xml 解析
 npm run selfcheck:i18n     # 三语 key / 占位符一致性，package.nls 与 package.json 的 %key% 对应
+npm run selfcheck:state    # 运行期快照清洗 / 读回（坏数据退化、pid 校验）
+npm run selfcheck:adopt    # 真实子进程的接管 / 重复接管拒绝 / 停止后进程结束（端到端）
 ```
 
 也可以一次性设好环境变量，然后跑全部：

@@ -9,7 +9,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import type { AppRuntime, BootApp, CoverageAgentSpec, CoverageState, LaunchSpec } from '../model/types';
+import type {
+  AppRuntime,
+  AppState,
+  BootApp,
+  CoverageAgentSpec,
+  CoverageState,
+  LaunchSpec
+} from '../model/types';
 import { defaultProfile, resolveContextPath, resolvePort } from '../scanner/springConfig';
 import { attachToApp } from '../debug/attach';
 import { buildCommandPlan, buildProcessResourcesCommand, buildUrl } from './command';
@@ -18,6 +25,7 @@ import {
   buildDumpArgs,
   buildMergeArgs,
   buildReportArgs,
+  cliJarName,
   coverageDir,
   ensureJacocoTools,
   parseJacocoXml,
@@ -27,7 +35,9 @@ import {
 import { parseBootLogLine } from './logParser';
 import { MetricsMonitor } from './monitor';
 import { spawnManaged, type ManagedProcess } from './processManager';
-import { findFreePort } from '../util/ports';
+import type { PersistedAppRuntime } from './state';
+import { findFreePort, isPortFree } from '../util/ports';
+import { isPidAlive, killProcessTree } from '../util/portProcess';
 import { execText, friendlyError, resolveJdkTool } from '../util/jdk';
 import { t } from '../i18n';
 
@@ -81,6 +91,13 @@ export class BootRunner implements vscode.Disposable {
   private readonly processes = new Map<string, ManagedProcess>();
   /** 预编译阶段的子进程，便于「停止」时打断 */
   private readonly buildProcesses = new Map<string, ManagedProcess>();
+  /**
+   * 上一会话遗留、被本会话接管的进程：只有 pid，没有 ChildProcess 句柄。
+   * 扩展宿主重启后 stdout 管道已断，只能靠 pid 存活检查与整组结束来管理。
+   */
+  private readonly adopted = new Map<string, number>();
+  /** 接管进程的存活巡检（进程被外部杀掉时把状态刷回 stopped） */
+  private readonly adoptedTimers = new Map<string, NodeJS.Timeout>();
   /** 已被用户取消启动的应用 */
   private readonly cancelled = new Set<string>();
   /** 正在执行 process-resources 的应用，避免重复触发 */
@@ -130,6 +147,191 @@ export class BootRunner implements vscode.Disposable {
   private logSection(title: string): void {
     this.output.appendLine('');
     this.output.appendLine(`===== ${title} =====`);
+  }
+
+  // ---------------- 跨会话状态恢复 ----------------
+
+  /**
+   * 导出仍在运行的应用快照，供扩展写进 workspaceState。
+   * 只记录本会话起的进程（句柄还在）或已接管的进程 —— 终端模式下进程不归扩展管，
+   * 拿不到 pid，也没法保证跨会话还在，因此不落盘。
+   */
+  snapshot(): PersistedAppRuntime[] {
+    const entries: PersistedAppRuntime[] = [];
+    for (const [appId, rt] of this.runtimes) {
+      if (rt.state !== 'running' && rt.state !== 'starting') {
+        continue;
+      }
+      const pid = rt.pid;
+      if (!pid || !isPidAlive(pid)) {
+        continue;
+      }
+      if (!this.processes.has(appId) && !this.adopted.has(appId)) {
+        continue;
+      }
+      entries.push({
+        appId,
+        state: rt.state,
+        pid,
+        port: rt.port,
+        contextPath: rt.contextPath,
+        profile: rt.profile,
+        debug: rt.debug,
+        startedAt: rt.startedAt,
+        lastCommand: rt.lastCommand,
+        coverage: rt.coverage
+          ? {
+              enabled: rt.coverage.enabled,
+              port: rt.coverage.port,
+              execFile: rt.coverage.execFile,
+              reportDir: rt.coverage.reportDir,
+              xmlFile: rt.coverage.xmlFile,
+              summary: rt.coverage.summary
+            }
+          : undefined
+      });
+    }
+    return entries;
+  }
+
+  /** 该应用是否跑在上一会话遗留的进程上 */
+  isAdopted(appId: string): boolean {
+    return this.adopted.has(appId);
+  }
+
+  /**
+   * 接管上一会话遗留的进程：校验 pid 还在就恢复成运行中。
+   * 返回 false 表示进程已不存在（或该应用已有实例），由调用方按未运行处理。
+   *
+   * 注意：stdout 管道随宿主退出已断，接管后没有日志输出，
+   * 需要日志时请「重启」；但打开 / 停止 / 覆盖率 dump 都能继续用。
+   */
+  async adopt(app: BootApp, entry: PersistedAppRuntime): Promise<boolean> {
+    if (this.isBusy(app.id)) {
+      return false;
+    }
+    if (!isPidAlive(entry.pid)) {
+      return false;
+    }
+
+    // 上次快照是「启动中」时，就绪日志已经丢了；端口在监听就认为已经起来
+    let state: AppState = entry.state;
+    if (state === 'starting' && entry.port !== undefined && !(await isPortFree(entry.port))) {
+      state = 'running';
+    }
+
+    this.adopted.set(app.id, entry.pid);
+    this.restoreCoverageContext(app, entry);
+
+    const coverage: CoverageState | undefined = entry.coverage
+      ? {
+          enabled: entry.coverage.enabled ?? false,
+          port: entry.coverage.port,
+          execFile: entry.coverage.execFile,
+          reportDir: entry.coverage.reportDir,
+          xmlFile: entry.coverage.xmlFile,
+          summary: entry.coverage.summary,
+          updatedAt: Date.now()
+        }
+      : undefined;
+
+    this.update(app.id, {
+      state,
+      profile: entry.profile,
+      port: entry.port,
+      contextPath: entry.contextPath,
+      debug: entry.debug,
+      pid: entry.pid,
+      startedAt: entry.startedAt ?? Date.now(),
+      lastCommand: entry.lastCommand,
+      metrics: undefined,
+      coverage
+    });
+
+    this.log(
+      t(
+        'log.adopted',
+        app.id,
+        entry.pid,
+        entry.port === undefined ? t('common.unknownPort') : entry.port,
+        entry.lastCommand ?? ''
+      )
+    );
+
+    const cfg = vscode.workspace.getConfiguration('webBoot');
+    if (cfg.get<boolean>('monitor', true)) {
+      const profile = entry.profile ?? defaultProfile(app.config);
+      this.monitor.start(app.id, {
+        mainClass: app.mainClass,
+        url: buildUrl(entry.port, entry.contextPath ?? resolveContextPath(app.config, profile)),
+        javaHome: cfg.get<string>('javaHome', '').trim()
+      });
+    }
+
+    // 进程可能被外部（任务管理器 / kill）结束：定期巡检，把状态刷回未运行
+    this.clearAdoptedWatch(app.id);
+    const timer = setInterval(() => {
+      if (isPidAlive(entry.pid)) {
+        return;
+      }
+      this.log(t('log.adoptedExited', app.id, entry.pid));
+      this.clearAdoptedWatch(app.id);
+      this.adopted.delete(app.id);
+      this.monitor.stop(app.id);
+      this.update(app.id, { state: 'stopped', pid: undefined, metrics: undefined });
+    }, 15_000);
+    this.adoptedTimers.set(app.id, timer);
+    return true;
+  }
+
+  private clearAdoptedWatch(appId: string): void {
+    const timer = this.adoptedTimers.get(appId);
+    if (timer) {
+      clearInterval(timer);
+      this.adoptedTimers.delete(appId);
+    }
+  }
+
+  /**
+   * 重建覆盖率上下文，让接管的进程在停止时仍能 dump 出这一段时间的执行数据。
+   * 任何一步不满足（缓存 jar 被删、target/classes 不在）就放弃，只影响覆盖率，不影响接管。
+   */
+  private restoreCoverageContext(app: BootApp, entry: PersistedAppRuntime): void {
+    const coverage = entry.coverage;
+    if (!coverage?.port || !coverage.execFile) {
+      return;
+    }
+    try {
+      const cfg = vscode.workspace.getConfiguration('webBoot');
+      const version =
+        (
+          cfg.get<string>('coverageJacocoVersion', DEFAULT_JACOCO_VERSION) || DEFAULT_JACOCO_VERSION
+        ).trim() || DEFAULT_JACOCO_VERSION;
+      const cliJar = path.join(toolsCacheDir(this.root, version), cliJarName(version));
+      if (!existsFile(cliJar) || !existsFile(coverage.execFile)) {
+        return;
+      }
+      const classfiles = [path.join(app.dir, 'target', 'classes')].filter(existsDir);
+      if (classfiles.length === 0) {
+        return;
+      }
+      const dir = coverageDir(this.root, app.id);
+      this.coverageContexts.set(app.id, {
+        appId: app.id,
+        port: coverage.port,
+        cliJar,
+        java: resolveJdkTool(cfg.get<string>('javaHome', '').trim(), 'java'),
+        dir,
+        execFile: coverage.execFile,
+        htmlDir: coverage.reportDir ?? path.join(dir, 'html'),
+        xmlFile: coverage.xmlFile ?? path.join(dir, 'report.xml'),
+        classfiles,
+        sourcefiles: [path.join(app.dir, 'src', 'main', 'java')].filter(existsDir)
+      });
+    } catch {
+      // 重建失败不阻断接管
+      this.coverageContexts.delete(app.id);
+    }
   }
 
   /** 运行一条命令并登记，便于 stop() 打断预编译 */
@@ -713,12 +915,13 @@ export class BootRunner implements vscode.Disposable {
     }
 
     const proc = this.processes.get(appId);
-    if (!proc) {
+    const adoptedPid = this.adopted.get(appId);
+    if (!proc && adoptedPid === undefined) {
       this.update(appId, { state: 'stopped', pid: undefined, metrics: undefined });
       return;
     }
+    const legacyPid = proc ? undefined : adoptedPid;
     this.update(appId, { state: 'stopping' });
-
     // 覆盖率：必须在杀进程之前 dump —— taskkill /F 不触发 JVM shutdown hook
     const hasCoverage = this.coverageContexts.has(appId);
     if (hasCoverage) {
@@ -726,9 +929,21 @@ export class BootRunner implements vscode.Disposable {
       await this.dumpCoverage(appId);
     }
 
-    this.log(t('log.stopping', appId, proc.pid));
-    await proc.stop();
-    this.processes.delete(appId);
+    if (proc) {
+      this.log(t('log.stopping', appId, proc.pid));
+      await proc.stop();
+      this.processes.delete(appId);
+    } else if (legacyPid !== undefined) {
+      // 接管来的进程没有句柄：Windows 用 taskkill /T 结束整棵树，
+      // POSIX 按进程组结束（mvn 是独立进程组的组长，只杀它会留下 java）
+      this.log(t('log.stoppingAdopted', appId, legacyPid));
+      const result = await killProcessTree(legacyPid, { group: process.platform !== 'win32' });
+      if (!result.ok) {
+        this.log(t('log.stoppingAdoptedFailed', appId, legacyPid, result.error ?? ''));
+      }
+      this.clearAdoptedWatch(appId);
+      this.adopted.delete(appId);
+    }
     this.update(appId, { state: 'stopped', pid: undefined, metrics: undefined });
     this.log(t('log.stopped', appId));
 
@@ -739,7 +954,11 @@ export class BootRunner implements vscode.Disposable {
   }
 
   async stopAll(): Promise<void> {
-    const ids = new Set<string>([...this.processes.keys(), ...this.buildProcesses.keys()]);
+    const ids = new Set<string>([
+      ...this.processes.keys(),
+      ...this.buildProcesses.keys(),
+      ...this.adopted.keys()
+    ]);
     for (const appId of ids) {
       await this.stop(appId);
     }
@@ -768,6 +987,10 @@ export class BootRunner implements vscode.Disposable {
       clearTimeout(timer);
     }
     this.timers.clear();
+    for (const timer of this.adoptedTimers.values()) {
+      clearInterval(timer);
+    }
+    this.adoptedTimers.clear();
     this.monitor.dispose();
     this.emitter.dispose();
   }

@@ -304,11 +304,11 @@ export interface EnsureToolsOptions {
   log?: (line: string) => void;
 }
 
-function agentJarName(version: string): string {
+export function agentJarName(version: string): string {
   return `org.jacoco.agent-${version}-runtime.jar`;
 }
 
-function cliJarName(version: string): string {
+export function cliJarName(version: string): string {
   return `org.jacoco.cli-${version}-nodeps.jar`;
 }
 

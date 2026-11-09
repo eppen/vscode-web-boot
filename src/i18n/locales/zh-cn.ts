@@ -33,6 +33,7 @@ export const zhCN = {
   'common.portOverrideCleared': '，已清除端口覆盖',
   'common.unknownError': '未知错误',
   'common.unknownProcess': '未知进程',
+  'common.unknownPort': '未知',
   'common.timeout': '超时',
   'common.startFailed': '启动失败',
   'common.processExited': '进程已退出',
@@ -135,12 +136,19 @@ export const zhCN = {
   'log.coverageDumpBeforeStop': '[覆盖率] {0} 结束前 dump 执行数据...',
   'log.stopping': '[停止] 正在结束 {0}（pid {1}）...',
   'log.stopped': '[停止] {0} 已结束。',
+  'log.adopted':
+    '[接管] {0} 仍在上一会话的进程中运行（pid {1}，端口 {2}），日志输出已断开；要看日志请重启该应用。命令：{3}',
+  'log.adoptedExited': '[接管] {0} 的进程（pid {1}）已不存在，状态已置为未运行。',
+  'log.stoppingAdopted': '[停止] {0} 运行在上一会话遗留的进程中，正在结束 pid {1}...',
+  'log.stoppingAdoptedFailed': '[停止] 结束 {0}（pid {1}）失败：{2}',
+  'log.restoreStale': '[恢复] {0} 上次记录的进程（pid {1}）已结束，状态保持未运行。',
   'log.spawnFailed': '[启动失败] {0}',
 
   // ---------------- 弹窗 / 提示 ----------------
   'msg.scanFailed': 'Web Boot 扫描失败：{0}',
   'msg.noRunningApps': '当前没有正在运行的应用。',
   'msg.noApps': '未发现可启动的 Spring Boot 应用。',
+  'msg.restoredApps': '已接管 {0} 个重启前仍在运行的应用：{1}',
   'msg.portKillPartialFailed': '端口 {0} 的部分进程结束失败（{1}），可能需要管理员权限。',
   'msg.portStillOccupiedAfterKill': '进程已结束，但端口 {0} 仍被占用。',
   'msg.appAlreadyRunning': '{0} 已在运行。',

@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+## 0.1.8
+
+### Added
+
+- 运行期状态持久化到 `workspaceState`：VS Code / VSCodium 重载窗口或重启后自动「接管」上一会话遗留的 Spring Boot 进程，树节点恢复为运行中，端口、context-path、profile、上次命令与覆盖率上下文一并还原，无需重新启动应用
+- 接管项每 15 秒巡检一次 pid，进程在编辑器之外被结束时自动刷新为未运行
+- 接管后的应用仍可采样 / dump JaCoCo 覆盖率，「停止」按进程树结束（Windows `taskkill /T`，POSIX 按进程组）
+- `npm run selfcheck:state`：快照清洗与读回（坏数据退化为空数组、pid 校验）
+- `npm run selfcheck:adopt`：真实子进程的接管 / 重复接管拒绝 / 停止后进程结束（端到端自检）
+
+### Changed
+
+- 关闭窗口或退出编辑器不再结束正在运行的应用（此前 `deactivate` 会 `stopAll`）；需要结束请用「停止」命令
+- 接管来的进程没有句柄，重载后拿不到此前的输出日志，想看日志需「重启」应用
+
 ## 0.1.7
 
 ### Added

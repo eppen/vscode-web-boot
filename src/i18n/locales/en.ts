@@ -33,6 +33,7 @@ export const en: Record<MessageKey, string> = {
   'common.portOverrideCleared': ' (port override cleared)',
   'common.unknownError': 'Unknown error',
   'common.unknownProcess': 'Unknown process',
+  'common.unknownPort': 'unknown',
   'common.timeout': 'Timeout',
   'common.startFailed': 'failed to start',
   'common.processExited': 'process exited',
@@ -140,12 +141,21 @@ export const en: Record<MessageKey, string> = {
   'log.coverageDumpBeforeStop': '[Coverage] Dumping execution data for {0} before it stops...',
   'log.stopping': '[Stop] Stopping {0} (pid {1})...',
   'log.stopped': '[Stop] {0} stopped.',
+  'log.adopted':
+    '[Adopted] {0} is still running from the previous session (pid {1}, port {2}); its log output is gone — restart the app if you need logs. Command: {3}',
+  'log.adoptedExited': '[Adopted] The process for {0} (pid {1}) is gone; state reset to stopped.',
+  'log.stoppingAdopted':
+    '[Stop] {0} runs in a process left over from the previous session; stopping pid {1}...',
+  'log.stoppingAdoptedFailed': '[Stop] Failed to stop {0} (pid {1}): {2}',
+  'log.restoreStale':
+    '[Restore] The recorded process for {0} (pid {1}) has exited; kept as stopped.',
   'log.spawnFailed': '[Spawn failed] {0}',
 
   // ---------------- Notifications ----------------
   'msg.scanFailed': 'Web Boot scan failed: {0}',
   'msg.noRunningApps': 'No running apps.',
   'msg.noApps': 'No launchable Spring Boot apps found.',
+  'msg.restoredApps': 'Adopted {0} app(s) still running from before the restart: {1}',
   'msg.portKillPartialFailed':
     'Failed to terminate some processes on port {0} ({1}); administrator rights may be required.',
   'msg.portStillOccupiedAfterKill': 'Processes were terminated, but port {0} is still in use.',

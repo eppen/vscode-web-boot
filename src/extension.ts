@@ -37,6 +37,7 @@ import {
 } from './util/portProcess';
 import { buildLaunchConfigs, writeLaunchJson } from './commands/generateLaunchJson';
 import { buildUrl } from './runner/command';
+import { RUNTIME_STATE_KEY, buildSnapshot, sanitizeRuntimes } from './runner/state';
 import { initI18n, t } from './i18n';
 import type { AppPreference, BootApp, LaunchSpec } from './model/types';
 
@@ -46,9 +47,11 @@ let store: PreferenceStore;
 let provider: AppsTreeProvider;
 let statusItem: vscode.StatusBarItem;
 let treeView: vscode.TreeView<WebBootTreeItem> | undefined;
+let ctx: vscode.ExtensionContext;
 let apps: BootApp[] = [];
 let conflictMap = new Map<string, PortConflict>();
 let refreshTimer: NodeJS.Timeout | undefined;
+let persistTimer: NodeJS.Timeout | undefined;
 
 function rootDir(): string {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -160,6 +163,66 @@ function scheduleRefresh(): void {
     refreshTimer = undefined;
     void scanAndRefresh();
   }, 800);
+}
+
+// ---------------- 跨会话运行状态（重启后接管） ----------------
+
+/**
+ * 把「谁在跑」写进 workspaceState（本机、按工作区，不进 git）。
+ *
+ * 扩展宿主重启时内存里的运行状态会丢，但 `mvn spring-boot:run` 起的进程不会
+ * 跟着退出；落盘后下次 activate 就能校验 pid 并接管，用户看到的仍是运行中。
+ */
+async function persistRuntimes(): Promise<void> {
+  if (!ctx || !runner) {
+    return;
+  }
+  try {
+    await ctx.workspaceState.update(RUNTIME_STATE_KEY, buildSnapshot(runner.snapshot()));
+  } catch {
+    // 写盘失败只影响下次接管，不打断当前操作
+  }
+}
+
+/** 状态变化频繁（启动中 -> 运行中 -> 停止中），合并成一次写入 */
+function schedulePersist(): void {
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+  }
+  persistTimer = setTimeout(() => {
+    persistTimer = undefined;
+    void persistRuntimes();
+  }, 400);
+}
+
+/**
+ * 接管上一会话仍在运行的应用。
+ * pid 还在就恢复成运行中（可直接打开 / 停止 / 重启），已退出的记录清掉。
+ */
+async function restoreRuntimes(): Promise<number> {
+  if (!ctx) {
+    return 0;
+  }
+  const entries = sanitizeRuntimes(ctx.workspaceState.get(RUNTIME_STATE_KEY));
+  const adopted: string[] = [];
+  for (const entry of entries) {
+    const app = apps.find((item) => item.id === entry.appId);
+    // 应用已从工作区移除 / 改了 artifactId：无法接管，直接丢弃这条记录
+    if (!app || !(await runner.adopt(app, entry))) {
+      output.appendLine(t('log.restoreStale', entry.appId, entry.pid));
+      continue;
+    }
+    adopted.push(entry.port ? `${entry.appId}:${entry.port}` : entry.appId);
+  }
+  provider.refresh();
+  updateStatusBar();
+  await persistRuntimes();
+  if (adopted.length > 0) {
+    void vscode.window.showInformationMessage(
+      t('msg.restoredApps', adopted.length, adopted.join(t('common.listSeparator')))
+    );
+  }
+  return adopted.length;
 }
 
 /** 从命令参数里取应用，取不到就让用户选 */
@@ -1195,8 +1258,9 @@ async function generateLaunchJsonFile(): Promise<void> {
     });
 }
 
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(extContext: vscode.ExtensionContext): void {
   // 先确定语言，后面所有文案（包括输出通道名之外的内容）都依赖它
+  ctx = extContext;
   initI18n(
     vscode.env.language,
     vscode.workspace.getConfiguration('webBoot').get<string>('language', 'auto')
@@ -1228,7 +1292,7 @@ export function activate(context: vscode.ExtensionContext): void {
   statusItem.show();
 
   const register = (command: string, callback: (...args: unknown[]) => unknown): void => {
-    context.subscriptions.push(vscode.commands.registerCommand(command, callback));
+    extContext.subscriptions.push(vscode.commands.registerCommand(command, callback));
   };
 
   register('webBoot.refresh', () => scanAndRefresh());
@@ -1347,7 +1411,7 @@ export function activate(context: vscode.ExtensionContext): void {
   register('webBoot.generateLaunchJson', () => generateLaunchJsonFile());
   register('webBoot.showOutput', () => output.show(true));
 
-  context.subscriptions.push(
+  extContext.subscriptions.push(
     output,
     runner,
     treeView,
@@ -1370,6 +1434,7 @@ export function activate(context: vscode.ExtensionContext): void {
     runner.onDidChangeState(() => {
       provider.refresh();
       updateStatusBar();
+      schedulePersist();
     }),
     vscode.workspace.onDidChangeWorkspaceFolders(() => scheduleRefresh())
   );
@@ -1379,19 +1444,27 @@ export function activate(context: vscode.ExtensionContext): void {
   watcher.onDidChange(() => scheduleRefresh());
   watcher.onDidCreate(() => scheduleRefresh());
   watcher.onDidDelete(() => scheduleRefresh());
-  context.subscriptions.push(watcher);
+  extContext.subscriptions.push(watcher);
 
-  void scanAndRefresh().then(() => {
+  void scanAndRefresh().then(async () => {
     if (apps.length === 0) {
       output.appendLine(t('log.noAppsHint'));
     }
+    // 扫描到应用之后再接管：上一会话遗留的进程按 appId 对回来
+    await restoreRuntimes();
   });
 }
 
 export async function deactivate(): Promise<void> {
-  // 关闭窗口时清理子进程，避免 java 残留占用端口
+  // 关闭窗口 / 重载时【不】结束 Spring Boot 进程：应用继续对外提供服务，
+  // 下次 activate 会按 workspaceState 里的快照接管（运行中 -> 可停止 / 打开 / 重启）。
+  // 需要停掉请显式点「停止」。
+  if (persistTimer) {
+    clearTimeout(persistTimer);
+    persistTimer = undefined;
+  }
   if (runner) {
-    await runner.stopAll();
+    await persistRuntimes();
     runner.dispose();
   }
 }

@@ -38,6 +38,7 @@ Web Boot Runner detects both cases and handles them automatically.
 - **Runtime monitoring** — after startup, refreshes JVM heap/GC (via `jstat`) and Tomcat HTTP status every 5 seconds in the tree and tooltip; shows Tomcat thread-pool metrics when Actuator is available.
 - **Runtime coverage (JaCoCo)** — optionally attaches a JaCoCo agent to `spring-boot:run` (tcpserver mode); dumps execution data before the process is killed, merges it across runs, and generates HTML + XML reports with line/branch/class rates shown in the tree and tooltip.
 - **Process-tree stop** — uses `taskkill /T /F` on Windows, so no orphan Java process keeps the port.
+- **Survives a window reload** — runtime state is persisted in `workspaceState`, so after reloading or restarting the window the extension re-adopts the Spring Boot processes left from the previous session (status, port, context path, profile, last command), and closing the window no longer kills running apps.
 - **Copy launch command** — copies the exact Maven command for use in any terminal.
 - **Multi-language UI** — English, Simplified Chinese, and Japanese; follows the VS Code display language by default and can be pinned with `webBoot.language`.
 
@@ -130,6 +131,7 @@ Per-app preferences (profile, port, main class, `buildDependencies`, `coverage`)
 - While running, locates the Java process via `jps -l` (the Maven pid is a shell, not the JVM), reads heap and GC with `jstat -gc`, probes the app with HTTP `HEAD`, and optionally reads Tomcat thread-pool metrics from Actuator.
 - With coverage enabled, appends a JaCoCo `-javaagent` (tcpserver mode) to `spring-boot:run`; on stop or manual sampling it first runs `jacococli dump` against the agent port, merges the exec with previous runs, and generates HTML + XML reports with `jacococli report`.
 - Stops the entire process tree, preventing orphan Java processes from holding the port.
+- Persists a runtime snapshot (app → pid / port / last command) into `workspaceState` with a 400 ms debounce. Closing the window only saves the snapshot; on activation the extension verifies each pid and re-adopts the survivors, polling them every 15 seconds and flipping them back to stopped when they disappear.
 
 ### Notes and limitations
 
@@ -141,6 +143,7 @@ Per-app preferences (profile, port, main class, `buildDependencies`, `coverage`)
 - **Actuator metrics use the default path.** A custom `management.server.port` or `management.endpoints.web.base-path` disables the thread-pool display; HTTP probing is unaffected.
 - **Terminal mode has no monitoring.** With `webBoot.runner = terminal`, the Java process is unknown and no JVM / Tomcat metrics are collected.
 - **Coverage needs compiled classes and is unavailable in terminal mode.** The dump/report steps run `java -jar jacococli`; if `target/classes` is missing, coverage is skipped for that run. Only the module's own classes are measured (dependency modules are not included). Coverage preparation failures degrade gracefully: the app still starts without the agent.
+- **Adopted apps have no log replay.** After a window reload the extension only knows the pid of the process left from the previous session; earlier output is gone, so restart the app to get logs. If the process is killed outside the editor, the node flips to stopped within 15 seconds.
 
 ### Development
 
@@ -191,6 +194,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 - **运行期监控**：启动后每 5 秒刷新 JVM 堆/GC（`jstat`）与 Tomcat HTTP 状态，显示在树节点与悬浮提示；应用暴露 Actuator 时还会显示 Tomcat 线程池。
 - **运行时覆盖率（JaCoCo）**：可选给 `spring-boot:run` 挂 JaCoCo agent（tcpserver 模式），停止 / 采样时先 dump 执行数据再结束进程，多次运行累积合并后生成 HTML + XML 报告，行 / 分支 / 类命中率显示在树节点与悬浮提示。
 - **按进程树停止**：Windows 下使用 `taskkill /T /F`，避免 Java 子进程残留占用端口。
+- **窗口重载后接管**：运行期状态写入 `workspaceState`，重载 / 重启窗口后自动接管上一会话遗留的进程，树节点恢复为运行中（状态、端口、context-path、profile、上次命令一并还原）；关闭窗口不再顺带结束应用。
 - **复制启动命令**：把实际执行的 Maven 命令复制到剪贴板，可贴进任意终端。
 - **多语言界面**：简体中文 / 英文 / 日文，默认跟随 VS Code 显示语言，可用 `webBoot.language` 固定。
 - **中 / 日 / 英 三语界面**：默认跟随 VS Code 显示语言，也可用 `webBoot.language` 固定为 `zh-cn` / `en` / `ja`。
@@ -282,6 +286,7 @@ monitor-server         dev    :9999   /monitor
 - 运行中通过 `jps -l` 定位 Java 进程（Maven 的 pid 是 shell，不是 JVM），用 `jstat -gc` 读取堆与 GC，向应用发 HTTP `HEAD` 探活，并在 Actuator 可用时读取 Tomcat 线程池。
 - 启用覆盖率时，在 `spring-boot.run.jvmArguments` 追加 JaCoCo `-javaagent`（tcpserver 模式）；停止或手动采样时先用 `jacococli dump` 连 agent 端口拉取执行数据，与历史 exec 合并后由 `jacococli report` 生成 HTML + XML 报告。
 - 停止时结束整棵进程树，避免 Java 子进程残留占用端口。
+- 运行中把「应用 → pid / 端口 / 上次命令」快照写入 `workspaceState`（400 ms 合并写盘）；关闭窗口只落盘不杀进程，下次激活时校验 pid 存活再接管，并每 15 秒巡检一次，进程在外部消失时刷新为未运行。
 
 ### 说明与限制
 
@@ -293,6 +298,7 @@ monitor-server         dev    :9999   /monitor
 - **Actuator 指标使用默认路径。** 自定义 `management.server.port` 或 `management.endpoints.web.base-path` 时不会显示线程池；HTTP 探活不受影响。
 - **终端模式不监控。** `webBoot.runner = terminal` 时拿不到 Java 进程，不采集 JVM / Tomcat 指标。
 - **覆盖率需要已编译字节码，且终端模式不可用。** dump / 报告通过 `java -jar jacococli` 执行；模块未编译（`target/classes` 不存在）时本次不启用覆盖率，只统计本模块字节码（不含依赖模块）。覆盖率准备失败会降级为「本次不启用」，不影响应用启动。
+- **接管来的应用没有日志回放。** 重载窗口后接管的是上一会话遗留的进程，扩展手里只有 pid，此前的输出日志不会再出现，需要看日志请「重启」应用；若在编辑器之外手动结束了进程，节点会在最多 15 秒后刷新为未运行。
 
 ### 开发
 

@@ -33,6 +33,7 @@ export const ja: Record<MessageKey, string> = {
   'common.portOverrideCleared': '（ポート上書きを解除）',
   'common.unknownError': '不明なエラー',
   'common.unknownProcess': '不明なプロセス',
+  'common.unknownPort': '不明',
   'common.timeout': 'タイムアウト',
   'common.startFailed': '起動に失敗',
   'common.processExited': 'プロセスが終了',
@@ -141,12 +142,22 @@ export const ja: Record<MessageKey, string> = {
   'log.coverageDumpBeforeStop': '[カバレッジ] {0} の停止前に実行データを dump しています...',
   'log.stopping': '[停止] {0} を停止しています（pid {1}）...',
   'log.stopped': '[停止] {0} を停止しました。',
+  'log.adopted':
+    '[引き継ぎ] {0} は前回のセッションのプロセスで実行中です（pid {1}、ポート {2}）。ログ出力は切れているため、ログが必要なら再起動してください。コマンド：{3}',
+  'log.adoptedExited':
+    '[引き継ぎ] {0} のプロセス（pid {1}）は既に終了しているため、停止状態にしました。',
+  'log.stoppingAdopted':
+    '[停止] {0} は前回のセッションから残ったプロセスで動作中です。pid {1} を終了します...',
+  'log.stoppingAdoptedFailed': '[停止] {0}（pid {1}）の終了に失敗しました：{2}',
+  'log.restoreStale':
+    '[復元] {0} の前回のプロセス（pid {1}）は終了済みのため、停止状態のままにしました。',
   'log.spawnFailed': '[起動失敗] {0}',
 
   // ---------------- 通知 ----------------
   'msg.scanFailed': 'Web Boot のスキャンに失敗：{0}',
   'msg.noRunningApps': '実行中のアプリはありません。',
   'msg.noApps': '起動可能な Spring Boot アプリが見つかりません。',
+  'msg.restoredApps': '再起動前から実行中だった {0} 個のアプリを引き継ぎました：{1}',
   'msg.portKillPartialFailed':
     'ポート {0} の一部プロセスの終了に失敗しました（{1}）。管理者権限が必要な可能性があります。',
   'msg.portStillOccupiedAfterKill': 'プロセスは終了しましたが、ポート {0} はまだ使用中です。',

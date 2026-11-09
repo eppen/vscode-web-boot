@@ -330,18 +330,38 @@ export async function findPortOwners(port: number): Promise<PortOwner[]> {
   }
 }
 
-/** 进程是否还活着（用于 POSIX 结束后的确认） */
-function isAlive(pid: number): boolean {
+/**
+ * 进程是否还活着。
+ * 用途：结束进程后的确认，以及扩展宿主重启后接管上一会话进程时校验 pid。
+ * signal 0 只做存在性检查；Windows 上没有权限时会抛 EPERM，此时进程实际存在，
+ * 但扩展通常以当前用户权限运行，遇到 EPERM 保守地认为「已不存在」会丢掉接管能力，
+ * 因此按 code 区分：ESRCH 才算不存在。
+ */
+export function isPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
 
+export interface KillOptions {
+  /**
+   * POSIX 下按进程组结束。扩展宿主重启后接管的进程已经没有句柄，
+   * 而 Web Boot 起的 mvn 是独立进程组的组长，只有整组结束才能带走 java 子进程。
+   */
+  group?: boolean;
+}
+
 /** 结束单个进程（Windows 结束整棵进程树） */
-export async function killProcessTree(pid: number): Promise<{ ok: boolean; error?: string }> {
+export async function killProcessTree(
+  pid: number,
+  opts: KillOptions = {}
+): Promise<{ ok: boolean; error?: string }> {
   if (!Number.isInteger(pid) || pid <= 0) {
     return { ok: false, error: t('error.invalidPid', pid) };
   }
@@ -358,29 +378,42 @@ export async function killProcessTree(pid: number): Promise<{ ok: boolean; error
     }
   }
 
+  const send = (signal: NodeJS.Signals): void => {
+    // 组模式下先按负 pid 发给整组；进程组不存在时退回单 pid
+    if (opts.group) {
+      try {
+        process.kill(-pid, signal);
+        return;
+      } catch {
+        // fallthrough
+      }
+    }
+    process.kill(pid, signal);
+  };
+
   try {
-    process.kill(pid, 'SIGTERM');
+    send('SIGTERM');
   } catch (err) {
-    if (!isAlive(pid)) {
+    if (!isPidAlive(pid)) {
       return { ok: true };
     }
     return { ok: false, error: (err as Error).message };
   }
-  for (let i = 0; i < 20 && isAlive(pid); i++) {
+  for (let i = 0; i < 20 && isPidAlive(pid); i++) {
     await sleep(100);
   }
-  if (!isAlive(pid)) {
+  if (!isPidAlive(pid)) {
     return { ok: true };
   }
   try {
-    process.kill(pid, 'SIGKILL');
+    send('SIGKILL');
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }
-  for (let i = 0; i < 20 && isAlive(pid); i++) {
+  for (let i = 0; i < 20 && isPidAlive(pid); i++) {
     await sleep(100);
   }
-  return isAlive(pid) ? { ok: false, error: t('error.processAliveAfterSigkill') } : { ok: true };
+  return isPidAlive(pid) ? { ok: false, error: t('error.processAliveAfterSigkill') } : { ok: true };
 }
 
 /** 结束一组占用者，返回成功 / 失败清单 */
