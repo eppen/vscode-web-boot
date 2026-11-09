@@ -93,6 +93,9 @@ export const zhCN = {
   'log.restartStopping': '[重启] 正在停止 {0}...',
   'log.restartStarting': '[重启] {0} 已停止，开始启动。',
   'log.restartStartingDebug': '[重启] {0} 已停止，开始调试启动。',
+  'log.restartWaitingPort': '[重启] 等待端口 {0} 释放...',
+  'log.restartPortStillOccupied':
+    '[重启] 端口 {0} 仍未释放，继续启动；若仍冲突请手动释放端口。',
   'log.portConflictSection': '===== 端口冲突检查 =====',
   'log.portConflictFlag': '  <-- 冲突',
   'log.noPortConflicts': '  未发现端口冲突。',

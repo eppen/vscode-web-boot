@@ -93,6 +93,9 @@ export const en: Record<MessageKey, string> = {
   'log.restartStopping': '[Restart] Stopping {0}...',
   'log.restartStarting': '[Restart] {0} stopped; starting.',
   'log.restartStartingDebug': '[Restart] {0} stopped; starting in debug mode.',
+  'log.restartWaitingPort': '[Restart] Waiting for port {0} to be released...',
+  'log.restartPortStillOccupied':
+    '[Restart] Port {0} is still in use; continuing launch. Release the port manually if it still conflicts.',
   'log.portConflictSection': '===== Port conflict check =====',
   'log.portConflictFlag': '  <-- conflict',
   'log.noPortConflicts': '  No port conflicts found.',

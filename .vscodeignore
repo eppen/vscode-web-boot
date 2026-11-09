@@ -14,6 +14,8 @@ package-lock.json
 # 打包与调试产物
 *.vsix
 **/*.map
+nul
+debug.log
 
 # 文档：市场页只保留 README 与 CHANGELOG
 DEVELOPMENT.md

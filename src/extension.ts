@@ -1141,6 +1141,15 @@ async function restartApp(app: BootApp): Promise<void> {
     output.appendLine(t('log.restartStopping', app.id));
     await runner.stop(app.id);
     updateStatusBar();
+    // 停止只保证 mvn/cmd 进程退出，内核可能还没回收监听句柄；
+    // 直接启动会撞「端口被占用」，这里等端口真正释放后再继续。
+    const pref = store.get(app.id);
+    const profile = resolveProfile(app, pref);
+    const port = resolvePortValue(app, profile, pref);
+    output.appendLine(t('log.restartWaitingPort', port));
+    if (!(await waitPortFree(port))) {
+      output.appendLine(t('log.restartPortStillOccupied', port));
+    }
   }
 
   output.appendLine(

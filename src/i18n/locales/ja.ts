@@ -94,6 +94,9 @@ export const ja: Record<MessageKey, string> = {
   'log.restartStopping': '[再起動] {0} を停止しています...',
   'log.restartStarting': '[再起動] {0} を停止しました。起動します。',
   'log.restartStartingDebug': '[再起動] {0} を停止しました。デバッグ起動します。',
+  'log.restartWaitingPort': '[再起動] ポート {0} の解放を待っています...',
+  'log.restartPortStillOccupied':
+    '[再起動] ポート {0} はまだ解放されていません。起動を続行します。競合が続く場合は手動でポートを解放してください。',
   'log.portConflictSection': '===== ポート競合チェック =====',
   'log.portConflictFlag': '  <-- 競合',
   'log.noPortConflicts': '  ポート競合は見つかりませんでした。',

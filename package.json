@@ -2,7 +2,7 @@
   "name": "web-boot-runner",
   "displayName": "Web Boot Runner",
   "description": "%description%",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publisher": "liuhualiang",
   "license": "MIT",
   "icon": "media/icon.png",
