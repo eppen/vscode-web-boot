@@ -161,8 +161,6 @@ If this extension saved you some time, you can optionally buy the author a coffe
   <a href="media/donate-wechat.png"><img src="media/donate-wechat.png" alt="WeChat Pay QR code" width="200" /></a>
 </p>
 
-<sub>Ad slot — this page keeps one clearly-labelled sponsor slot, for tools and services a Spring Boot / VS Code developer would actually use. To take it, reach the author through the WeChat QR code above and mention AD. Ads are always marked as ads, carry a plain https link and a static PNG at most, contain no tracking pixels or affiliate links, and never change how this extension behaves.</sub>
-
 ### License
 
 [MIT](https://github.com/eppen/vscode-web-boot/blob/main/LICENSE) © 2026 eppen
@@ -315,8 +313,6 @@ monitor-server         dev    :9999   /monitor
 <p align="center">
   <a href="media/donate-wechat.png"><img src="media/donate-wechat.png" alt="微信打赏二维码" width="200" /></a>
 </p>
-
-<sub>广告位 — 本页保留一个明确标注的赞助位，只接受 Spring Boot / VS Code 开发者真正用得上的工具或服务。有意投放请扫上方二维码联系作者，并注明 AD。广告一律标注为广告，只接受 https 链接与静态 PNG，不含追踪像素或返利链接，也不影响扩展的任何行为。</sub>
 
 ### 许可
 
