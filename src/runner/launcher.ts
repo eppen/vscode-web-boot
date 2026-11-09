@@ -69,6 +69,16 @@ function formatRate(rate: number | undefined): string {
   return rate === undefined ? '--' : `${rate.toFixed(1)}%`;
 }
 
+export interface StopOptions {
+  /**
+   * 重启场景：覆盖率报告（jacococli report 会重扫 classfiles）比较慢，
+   * 不放在 stop() 里阻塞启动，交给调用方在应用重新起来后调用
+   * refreshCoverageReport() 生成。dump 仍必须在这里做完 ——
+   * taskkill /F 之后 JVM 不会再吐 exec。
+   */
+  deferCoverageReport?: boolean;
+}
+
 /** 一次运行期覆盖率所需的全部上下文（不进 AppRuntime，避免把路径塞进模型） */
 interface CoverageContext {
   appId: string;
@@ -903,7 +913,7 @@ export class BootRunner implements vscode.Disposable {
   }
 
   /** 停止一个应用（结束整棵进程树，含预编译阶段） */
-  async stop(appId: string): Promise<void> {
+  async stop(appId: string, opts: StopOptions = {}): Promise<void> {
     this.monitor.stop(appId);
     this.cancelled.add(appId);
 
@@ -949,8 +959,21 @@ export class BootRunner implements vscode.Disposable {
 
     if (hasCoverage) {
       this.patchCoverage(appId, { enabled: false });
-      await this.reportCoverage(appId);
+      if (opts.deferCoverageReport) {
+        // 重启路径：报告留给 restartApp 在应用重新起来之后生成，不占住启动关键路径
+        this.log(t('log.coverageReportDeferred', appId));
+      } else {
+        await this.reportCoverage(appId);
+      }
     }
+  }
+
+  /**
+   * 只重新生成覆盖率报告（不 dump）。
+   * 重启时 stop() 里用 deferCoverageReport 跳过了报告，应用起来后由调用方补一次。
+   */
+  async refreshCoverageReport(appId: string): Promise<boolean> {
+    return this.reportCoverage(appId);
   }
 
   async stopAll(): Promise<void> {

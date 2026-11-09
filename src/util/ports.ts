@@ -39,17 +39,24 @@ function sleep(ms: number): Promise<void> {
  * 等待端口真正释放（结束占用进程后确认用）。
  * 进程刚被 taskkill 时内核可能还没回收监听句柄，直接重试启动会再次撞端口。
  */
-export async function waitPortFree(port: number, timeoutMs = 5000): Promise<boolean> {
+export async function waitPortFree(
+  port: number,
+  timeoutMs = 5000,
+  intervalMs = 200
+): Promise<boolean> {
+  // 先快判一次：进程通常已被 taskkill /F 结束，端口此刻就空闲，不必进轮询。
+  // 重启路径直接传较短的 timeoutMs，避免「端口其实早就释放了还在空等」。
+  if (await isPortFree(port)) {
+    return true;
+  }
   const deadline = Date.now() + timeoutMs;
-  for (;;) {
+  while (Date.now() < deadline) {
+    await sleep(intervalMs);
     if (await isPortFree(port)) {
       return true;
     }
-    if (Date.now() >= deadline) {
-      return false;
-    }
-    await sleep(200);
   }
+  return false;
 }
 
 export interface EffectiveTarget {

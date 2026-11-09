@@ -139,6 +139,8 @@ export const ja: Record<MessageKey, string> = {
     '[カバレッジ] {0} にはまだ exec データがありません。アプリを起動して API にアクセスしてからサンプリングしてください。',
   'log.coverageReport': '[カバレッジ] {0} 行 {1} / 分岐 {2} / クラス {3}、レポート：{4}',
   'log.coverageReportFailed': '[カバレッジ] {0} のレポート生成に失敗：{1}',
+  'log.coverageReportDeferred':
+    '[カバレッジ] {0} のレポートは再起動完了後に生成します（起動はブロックしません）。',
   'log.terminalModeHint':
     '[ヒント] ターミナルモードでは起動完了の検出と自動 attach はできません。デバッグには outputChannel モードに切り替えてください。',
   'log.stoppingBuild': '[停止] {0} のプリビルドを終了しています（pid {1}）...',

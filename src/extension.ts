@@ -1132,22 +1132,27 @@ async function restartApp(app: BootApp): Promise<void> {
   const runnerMode = vscode.workspace
     .getConfiguration('webBoot')
     .get<'outputChannel' | 'terminal'>('runner', 'outputChannel');
+  // 覆盖率：dump 必须在杀进程前做完，但「生成报告」很慢且不影响启动，
+  // 重启时推迟到应用重新起来之后再做（见下方 refreshCoverageReport）。
+  let deferredCoverageReport = false;
 
   if (runtime.state !== 'stopped') {
     if (runnerMode === 'terminal') {
       void vscode.window.showWarningMessage(t('msg.restartNotSupportedInTerminal'));
       return;
     }
+    deferredCoverageReport = runtime.coverage?.enabled === true;
     output.appendLine(t('log.restartStopping', app.id));
-    await runner.stop(app.id);
+    await runner.stop(app.id, { deferCoverageReport: deferredCoverageReport });
     updateStatusBar();
     // 停止只保证 mvn/cmd 进程退出，内核可能还没回收监听句柄；
     // 直接启动会撞「端口被占用」，这里等端口真正释放后再继续。
+    // taskkill /F 之后端口通常立刻释放，超时给 2s 即可，不必按默认 5s 空等。
     const pref = store.get(app.id);
     const profile = resolveProfile(app, pref);
     const port = resolvePortValue(app, profile, pref);
     output.appendLine(t('log.restartWaitingPort', port));
-    if (!(await waitPortFree(port))) {
+    if (!(await waitPortFree(port, 2000))) {
       output.appendLine(t('log.restartPortStillOccupied', port));
     }
   }
@@ -1156,6 +1161,10 @@ async function restartApp(app: BootApp): Promise<void> {
     wasDebug ? t('log.restartStartingDebug', app.id) : t('log.restartStarting', app.id)
   );
   const ok = await launch(app, { debug: wasDebug, silent: true });
+  if (deferredCoverageReport) {
+    // 不 await：报告生成期间应用已经在跑，不阻塞 restart 的完成
+    void runner.refreshCoverageReport(app.id);
+  }
   if (ok) {
     const url = appUrl(app);
     if (url) {

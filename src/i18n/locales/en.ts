@@ -138,6 +138,8 @@ export const en: Record<MessageKey, string> = {
     '[Coverage] {0} has no exec data yet; start the app, call some endpoints, then sample.',
   'log.coverageReport': '[Coverage] {0} line {1} / branch {2} / class {3}, report: {4}',
   'log.coverageReportFailed': '[Coverage] {0} report generation failed: {1}',
+  'log.coverageReportDeferred':
+    '[Coverage] Report for {0} deferred until after restart (does not block startup).',
   'log.terminalModeHint':
     '[Hint] Terminal mode cannot detect startup completion or auto-attach; switch to outputChannel mode for debugging.',
   'log.stoppingBuild': '[Stop] Terminating pre-build for {0} (pid {1})...',

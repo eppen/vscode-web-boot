@@ -133,6 +133,7 @@ export const zhCN = {
   'log.coverageNoExec': '[覆盖率] {0} 还没有 exec 数据，先启动应用访问接口后再采样。',
   'log.coverageReport': '[覆盖率] {0} 行 {1} / 分支 {2} / 类 {3}，报告：{4}',
   'log.coverageReportFailed': '[覆盖率] {0} 生成报告失败：{1}',
+  'log.coverageReportDeferred': '[覆盖率] {0} 的报告推迟到重启完成后再生成（不阻塞启动）。',
   'log.terminalModeHint':
     '[提示] 终端模式下无法检测启动完成，也不会自动 attach；需要调试请切换到 outputChannel 模式。',
   'log.stoppingBuild': '[停止] 正在结束 {0} 的预编译（pid {1}）...',
