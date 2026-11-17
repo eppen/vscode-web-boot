@@ -17,6 +17,11 @@ package-lock.json
 nul
 debug.log
 
+# 本机 AI 助手配置与临时脚本（不进包）
+.luban/**
+.cursor/**
+.tmp*
+
 # 文档：市场页只保留 README 与 CHANGELOG
 DEVELOPMENT.md
 

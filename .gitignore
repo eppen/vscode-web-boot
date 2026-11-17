@@ -14,3 +14,8 @@ test/.tmp/
 # VS Code 扩展测试宿主
 .vscode-test/
 nul
+
+# 本机 AI 助手配置与临时脚本
+.luban/
+.cursor/
+.tmp*
