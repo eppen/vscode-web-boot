@@ -28,6 +28,7 @@ Web Boot Runner detects both cases and handles them automatically.
 
 - **Application tree** in the activity bar, showing live status, profile, port, and context path.
 - **Manual groups** — create groups in the tree, drag apps in or out, and start/debug/stop an entire group; group nodes summarize port conflicts among their members.
+- **Group parameter panel** — one webview table listing every app of a group with its profile, port, main class, `-am` switch, and coverage switch; edit several rows at once and save once to `.vscode/web-boot.json` (group membership stays read-only).
 - **One-click run and restart** via `mvn spring-boot:run`, with an optional pre-build step (`compile` by default).
 - **Reactor-aware commands** — uses `-pl :artifact` (`-am` optional via `webBoot.buildDependencies`) inside the reactor and falls back to `-f <module>/pom.xml` outside it.
 - **Profile-aware ports** — merges the base config with each `application-<profile>.*` file to compute the effective port and context path.
@@ -73,7 +74,7 @@ monitor-server         dev    :9999   /monitor
 - Hover a node for inline Run / Debug / Edit or Open / Stop / Restart / Edit buttons.
 - Right-click for profile selection, port override, profile/port/main-class/`-am`/coverage editing, moving apps between groups, command copy, **Reload Resources** on a running app (`mvn process-resources`), and **Sample Coverage** / **Open Coverage Report** when coverage is enabled.
 - Drag apps onto a group (or onto the virtual "Ungrouped" bucket) to organize them; group nodes expose start/debug/stop for the whole group.
-- Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output, create group.
+- Toolbar buttons: refresh, check port conflicts, generate `launch.json`, show output, create group, edit group parameters.
 
 ### Commands
 
@@ -85,6 +86,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 指定端口运行...` (Run with Port) | Override the port and remember it |
 | `Web Boot: 编辑 Profile / 端口 / 主类 / -am / 覆盖率...` (Edit) | Edit the remembered profile, port, main class, `-am` switch, and coverage switch without launching; an empty port falls back to the config file, `-am` and coverage can follow the global setting or override it per app, and changes apply on the next start |
 | `Web Boot: 新建分组...` (Create Group) | Create a manual group; drag apps into it afterwards |
+| `Web Boot: 编辑分组参数...` (Edit Group Parameters) | Open a panel that lists the apps of every group (plus an "Ungrouped" section) as a table: profile, port, main class, `-am`, and coverage. Edit as many rows as you like and save once; a port equal to the config file's port or a main class equal to the scanned one is not written as an override, and "follow global" clears the per-app override |
 | `Web Boot: 重命名分组...` / `删除分组` (Rename / Delete Group) | Rename or delete a group; deleting only ungroups apps |
 | `Web Boot: 移动到分组...` (Move to Group) | Move an app into a group or back to "Ungrouped" |
 | `Web Boot: 启动整组` / `调试整组` / `停止整组` (Start / Debug / Stop Group) | Start (or debug-start with JDWP) the group's stopped apps in order, or stop its running apps |
@@ -121,6 +123,8 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.language` | `auto` | UI language: `auto` (follow the VS Code display language), `zh-cn`, `en`, or `ja` |
 
 Per-app preferences (profile, port, main class, `buildDependencies`, `coverage`) and manual groups are stored in `.vscode/web-boot.json` inside the workspace. A per-app `buildDependencies` or `coverage` value overrides the global setting for that app only.
+
+Besides the per-app `Edit` command, the same five fields can be edited in bulk from the group parameter panel (title bar button or the context menu of a group): changes are collected in memory and written with a single save, running apps report that a restart is required, and rows modified elsewhere while the panel was open are skipped instead of being overwritten.
 
 ### How it works
 
@@ -182,6 +186,7 @@ Web Boot Runner 会自动识别并处理这两种情况。
 
 - **应用树**：活动栏中的列表，直接显示运行状态、profile、端口与 context-path。
 - **手动分组**：在树中新建分组，拖拽应用归类，可整组启动 / 调试 / 停止；分组标题汇总组内端口冲突。
+- **分组参数面板**：一个 webview 表格按分组列出组内每个应用的 profile、端口、主类、`-am` 与覆盖率，可一次改多行、一次保存写回 `.vscode/web-boot.json`（分组归属只读，仍在树上拖拽 / 移动）。
 - **一键启动与重启**：通过 `mvn spring-boot:run` 启动，可选预编译步骤（默认 `compile`）。
 - **reactor 感知**：reactor 内使用 `-pl :artifact`（`-am` 由 `webBoot.buildDependencies` 控制），reactor 外自动降级为 `-f <模块>/pom.xml`。
 - **profile 端口计算**：将基础配置与每个 `application-<profile>.*` 深合并，算出该 profile 的生效端口与 context-path。
@@ -225,9 +230,9 @@ monitor-server         dev    :9999   /monitor
 
 - 点击未运行的节点启动应用；点击运行中的节点在浏览器打开。
 - 悬浮节点出现内联按钮：启动 / 调试 / 编辑，或打开 / 停止 / 重启 / 编辑。
-- 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口 / 主类 / `-am`、移动到分组、复制启动命令；运行中的应用还可「重新加载资源」（`mvn process-resources`）。
+- 右键菜单可选择 Profile、指定端口、编辑 Profile / 端口 / 主类 / `-am`、移动到分组、复制启动命令；分组右键可「编辑分组参数」（批量表格）；运行中的应用还可「重新加载资源」（`mvn process-resources`）。
 - 把应用拖到分组（或虚拟的「未分组」桶）即可归类；分组节点可启动 / 调试 / 停止整组。
-- 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出、新建分组。
+- 标题栏按钮：刷新、检查端口冲突、生成 `launch.json`、显示输出、新建分组、编辑分组参数。
 
 ### 命令
 
@@ -239,6 +244,7 @@ monitor-server         dev    :9999   /monitor
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
 | `Web Boot: 编辑 Profile / 端口 / 主类 / -am / 覆盖率...` | 不启动进程，逐项修改记住的 profile、端口、主类、`-am` 开关与覆盖率开关；端口留空则回到配置文件的值，主类可选扫描候选或手动输入，`-am` 与覆盖率均可选跟随全局或按应用覆盖，运行中的实例重启后生效 |
 | `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
+| `Web Boot: 编辑分组参数...` | 打开参数面板：按分组（含「未分组」）把所有应用列成表格，直接改 profile、端口、主类、`-am`、覆盖率，改完一次保存写回 `.vscode/web-boot.json`。端口等于配置文件端口、主类等于扫描值时不会写成覆盖；选「跟随全局」会清掉该应用的覆盖 |
 | `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除只解除归类，不删除应用 |
 | `Web Boot: 移动到分组...` | 把应用移入分组或移回「未分组」 |
 | `Web Boot: 启动整组` / `调试整组` / `停止整组` | 按顺序启动（或带 JDWP 调试启动）组内未运行的应用，或停止组内运行中的应用 |
@@ -274,6 +280,8 @@ monitor-server         dev    :9999   /monitor
 | `webBoot.language` | `auto` | 界面语言：`auto`（跟随 VS Code 显示语言）、`zh-cn`、`en`、`ja` |
 
 每个应用的 profile、端口、主类、`buildDependencies`、`coverage` 偏好与手动分组保存在工作区的 `.vscode/web-boot.json`。应用级 `buildDependencies` / `coverage` 只覆盖该应用，未设置时跟随全局设置。
+
+除了逐应用的「编辑」命令，也可以用分组参数面板批量修改这五项：改动先留在面板里，点「保存」一次性写盘；运行中的应用会提示重启后生效；面板打开期间被别处改过的应用会跳过而不是被覆盖。
 
 ### 实现方式
 

@@ -8,6 +8,7 @@
   "command.runWithPort": "ポートを指定して実行...",
   "command.edit": "Profile / ポート / メインクラス / -am / カバレッジを編集...",
   "command.createGroup": "新しいグループ...",
+  "command.editGroupPreferences": "グループのパラメータを編集...",
   "command.renameGroup": "グループ名を変更...",
   "command.deleteGroup": "グループを削除",
   "command.moveAppToGroup": "グループに移動...",

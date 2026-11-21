@@ -8,6 +8,7 @@
   "command.runWithPort": "Run with Port...",
   "command.edit": "Edit Profile / Port / Main Class / -am / Coverage...",
   "command.createGroup": "New Group...",
+  "command.editGroupPreferences": "Edit Group Parameters...",
   "command.renameGroup": "Rename Group...",
   "command.deleteGroup": "Delete Group",
   "command.moveAppToGroup": "Move to Group...",

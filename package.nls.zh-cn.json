@@ -8,6 +8,7 @@
   "command.runWithPort": "指定端口运行...",
   "command.edit": "编辑 Profile / 端口 / 主类 / -am / 覆盖率...",
   "command.createGroup": "新建分组...",
+  "command.editGroupPreferences": "编辑分组参数...",
   "command.renameGroup": "重命名分组...",
   "command.deleteGroup": "删除分组",
   "command.moveAppToGroup": "移动到分组...",

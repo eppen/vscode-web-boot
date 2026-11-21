@@ -4,6 +4,21 @@
 
 ## Unreleased
 
+## 0.2.0
+
+### Added
+
+- 「分组参数面板」：新增命令 `Web Boot: 编辑分组参数...`（侧边栏标题栏按钮 / 分组右键菜单 / 命令面板均可触发），用一张 webview 表格按分组（含「未分组」）列出所有应用的 profile、端口、主类、`-am`、覆盖率与运行状态，可一次改多行、一次保存写回 `.vscode/web-boot.json`；分组归属仍是只读，继续走树上拖拽
+- 面板写盘语义与「编辑 Profile / 端口 / 主类 / -am / 覆盖率」完全一致：端口等于配置文件端口、主类等于扫描值时不会落成覆盖；「跟随全局」清掉该应用的覆盖；换 profile 时清掉旧端口覆盖；非法输入整行跳过
+- 批量写入一次落盘（`PreferenceStore.applyMany`），保存后只弹一条汇总提示（保存数 / 跳过数 / 需重启数），细节写输出通道
+- 面板打开期间被别处改过的应用在保存时跳过（基线比对），不会覆盖外部修改；扫描结果或设置变化时面板保留未保存的输入并提示「已变化」
+- `npm run selfcheck:prefs`：`applyMany` 与 `diffPreference` 的写盘语义、面板 HTML 与内联脚本语法校验
+- `npm run panel:preview`：把带假数据的面板 HTML 落到 `test/.tmp/panel.html`，便于用浏览器直接看样式
+
+### Changed
+
+- `isJavaFqn` 从 `extension.ts` 抽到 `src/util/validate.ts`，命令与面板共用同一套校验
+
 ## 0.1.10
 
 ### Changed

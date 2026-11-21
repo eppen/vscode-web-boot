@@ -82,6 +82,26 @@ export class PreferenceStore {
     this.persist();
   }
 
+  /**
+   * 批量写入多个应用的偏好（合并式更新），最后只落盘一次。
+   *
+   * 参数面板一次保存可能改到十几个应用，逐个 set() 会产生同样多次同步写盘。
+   * patch 里显式给出的 undefined 会覆盖旧值（落盘时该字段消失），与 set() 一致。
+   */
+  async applyMany(patches: Record<string, AppPreference>): Promise<void> {
+    this.ensureLoaded();
+    const ids = Object.keys(patches);
+    if (ids.length === 0) {
+      return;
+    }
+    const apps = this.cache.apps ?? {};
+    for (const id of ids) {
+      apps[id] = { ...apps[id], ...patches[id] };
+    }
+    this.cache.apps = apps;
+    this.persist();
+  }
+
   getGroups(): AppGroup[] {
     this.ensureLoaded();
     return (this.cache.groups ?? []).map((g) => ({ name: g.name, apps: [...g.apps] }));

@@ -38,6 +38,21 @@ import {
 import { buildLaunchConfigs, writeLaunchJson } from './commands/generateLaunchJson';
 import { buildUrl } from './runner/command';
 import { RUNTIME_STATE_KEY, buildSnapshot, sanitizeRuntimes } from './runner/state';
+import { isJavaFqn } from './util/validate';
+import {
+  diffPreference,
+  samePreference,
+  type InvalidField,
+  type RawRowInput
+} from './config/prefsPatch';
+import {
+  PrefsPanel,
+  buildPanelLabels,
+  type PanelModel,
+  type PanelRow,
+  type PanelSaveResult,
+  type PanelSaveSkip
+} from './views/prefsPanel';
 import { initI18n, t } from './i18n';
 import type { AppPreference, BootApp, LaunchSpec } from './model/types';
 
@@ -139,6 +154,8 @@ async function scanAndRefresh(): Promise<void> {
     recomputeConflicts();
     provider.setApps(apps);
     updateStatusBar();
+    // 面板开着时同步刷新（面板是脏的只提示，不覆盖用户输入）
+    PrefsPanel.current?.refresh();
     output.appendLine(
       t(
         'log.scanSummary',
@@ -654,10 +671,6 @@ async function runWithPort(app: BootApp): Promise<void> {
   await launch(app, { port: Number(input) });
 }
 
-function isJavaFqn(value: string): boolean {
-  return /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(value);
-}
-
 /** 选择主类：同模块扫描到的候选 + 手动输入。取消返回 undefined。 */
 async function pickMainClass(app: BootApp, current: string): Promise<string | undefined> {
   const candidates = Array.from(
@@ -925,6 +938,216 @@ async function editPreferences(app: BootApp): Promise<void> {
     app,
     t('detail.mainClass', next, next === app.mainClass ? t('common.scanned') : t('common.override'))
   );
+}
+
+// ---------------- 参数面板（按分组批量编辑） ----------------
+
+/** 面板当前高亮的分组（从分组右键打开时设置，面板关闭后清掉） */
+let panelFocusGroup: string | undefined;
+
+/** 面板的一行：一个应用的当前生效值与落盘偏好 */
+function buildPanelRow(app: BootApp): PanelRow {
+  const pref = store.get(app.id);
+  const profile = resolveProfile(app, pref);
+  const runtime = runner.getRuntime(app.id);
+  const conflict = conflictMap.get(app.id);
+
+  // profile（含 '' = 默认 profile）-> 配置文件端口，供面板即时提示与校验
+  const profilePorts: Record<string, number> = {
+    '': resolvePortFromConfig(app.config, defaultProfile(app.config))
+  };
+  for (const name of app.config.profiles) {
+    if (name) {
+      profilePorts[name] = resolvePortFromConfig(app.config, name);
+    }
+  }
+
+  return {
+    id: app.id,
+    relDir: app.relDir,
+    profile: pref.profile ?? '',
+    availableProfiles: app.config.profiles.filter((p) => p !== ''),
+    defaultProfile: defaultProfile(app.config),
+    profilePorts,
+    portOverride: pref.port,
+    port: resolvePortValue(app, profile, pref),
+    mainClass: pref.mainClass ?? '',
+    scannedMainClass: app.mainClass,
+    // 同模块可能有多个启动类（多入口），候选列表与单应用编辑保持一致
+    mainClassCandidates: Array.from(
+      new Set(apps.filter((a) => a.dir === app.dir).map((a) => a.mainClass))
+    ),
+    buildDependencies: pref.buildDependencies,
+    coverage: pref.coverage,
+    state: runtime.state,
+    conflict: conflict ? t('panel.conflict', conflict.port) : undefined,
+    raw: { ...pref }
+  };
+}
+
+/** 拼出面板数据：分组顺序、组内排序、未分组桶都与侧边栏树保持一致 */
+function buildPanelModel(focusGroup?: string): PanelModel {
+  const groups = store.getGroups();
+  const byId = new Map(apps.map((app) => [app.id, app]));
+  const assigned = new Set(groups.flatMap((g) => g.apps));
+  const settings = vscode.workspace.getConfiguration('webBoot');
+  return {
+    groups: groups.map((group) => ({
+      name: group.name,
+      rows: group.apps
+        .map((id) => byId.get(id))
+        .filter((app): app is BootApp => !!app)
+        .sort((a, b) => a.id.localeCompare(b.id))
+        .map(buildPanelRow)
+    })),
+    ungroupedRows: apps
+      .filter((app) => !assigned.has(app.id))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map(buildPanelRow),
+    ungroupedLabel: t('group.ungrouped'),
+    labels: buildPanelLabels(),
+    globalBuildDependencies: settings.get<boolean>('buildDependencies', true),
+    globalCoverage: settings.get<boolean>('coverage', false),
+    focusGroup
+  };
+}
+
+/** 校验失败字段对应的提示文案 */
+function invalidFieldReason(field: InvalidField): string {
+  switch (field) {
+    case 'port':
+      return t('validate.portOrEmpty');
+    case 'mainClass':
+      return t('validate.mainClassFqn');
+    default:
+      return t('panel.invalidProfile');
+  }
+}
+
+/**
+ * 面板保存：逐行算出补丁 -> 汇总 -> 一次写盘 -> 统一刷新。
+ *
+ * 与单应用编辑的差别：这里只弹一条汇总提示（afterPreferenceChange 会每应用弹一次）。
+ * 面板打开后被别处改过的应用会跳过，避免覆盖别人的修改。
+ */
+async function applyPanelSave(
+  rawRows: Record<string, RawRowInput>,
+  baseline: Record<string, AppPreference>
+): Promise<PanelSaveResult> {
+  const patches: Record<string, AppPreference> = {};
+  const skipped: PanelSaveSkip[] = [];
+  let needsRestart = 0;
+
+  for (const [appId, raw] of Object.entries(rawRows)) {
+    const app = apps.find((a) => a.id === appId);
+    if (!app) {
+      skipped.push({ id: appId, reason: t('panel.skipUnknown', appId) });
+      continue;
+    }
+    const current: AppPreference = { ...store.get(appId) };
+    const snapshot = baseline[appId];
+    if (snapshot && !samePreference(current, snapshot)) {
+      skipped.push({ id: appId, reason: t('panel.skipModified', appId) });
+      continue;
+    }
+
+    const currentProfile = resolveProfile(app, current);
+    const previousPort = current.port ?? resolvePortFromConfig(app.config, currentProfile);
+    const nextProfile = (raw.profile ?? '').trim() || defaultProfile(app.config);
+    const diff = diffPreference({
+      scannedMainClass: app.mainClass,
+      configPort: resolvePortFromConfig(app.config, nextProfile),
+      previousPort,
+      availableProfiles: app.config.profiles.filter((p) => p !== ''),
+      current,
+      next: raw
+    });
+    if (diff.invalid) {
+      skipped.push({
+        id: appId,
+        reason: t('panel.skipInvalid', appId, invalidFieldReason(diff.invalid))
+      });
+      continue;
+    }
+    if (!diff.changed) {
+      continue;
+    }
+    patches[appId] = diff.patch;
+    if (runner.getRuntime(appId).state === 'running') {
+      needsRestart++;
+    }
+    output.appendLine(t('log.preference', appId, describePatch(diff.patch)));
+  }
+
+  const saved = Object.keys(patches).length;
+  if (saved > 0) {
+    await store.applyMany(patches);
+    recomputeConflicts();
+    provider.refresh();
+    updateStatusBar();
+  }
+
+  const summary =
+    saved === 0 && skipped.length === 0
+      ? t('panel.saveNothing')
+      : skipped.length === 0
+        ? t('panel.saveOk', saved)
+        : t(
+            'panel.saveSkipped',
+            saved,
+            skipped.length,
+            skipped.map((item) => item.reason).join(t('common.listSeparator'))
+          );
+  void vscode.window.showInformationMessage(
+    needsRestart > 0 ? `${summary}${t('panel.saveRestart', needsRestart)}` : summary
+  );
+  output.appendLine(t('log.panelSaved', saved, skipped.length, needsRestart));
+
+  return { saved, skipped, needsRestart };
+}
+
+/** 偏好补丁的可读摘要（写进输出通道） */
+function describePatch(patch: AppPreference): string {
+  const parts: string[] = [];
+  if (patch.profile !== undefined) {
+    parts.push(t('detail.profile', patch.profile, t('common.override')));
+  }
+  if (patch.port !== undefined) {
+    parts.push(t('detail.port', patch.port, t('common.override')));
+  }
+  if (patch.mainClass !== undefined) {
+    parts.push(t('detail.mainClass', patch.mainClass, t('common.override')));
+  }
+  if (patch.buildDependencies !== undefined) {
+    parts.push(
+      patch.buildDependencies
+        ? t('detail.buildDepsUseOverride')
+        : t('detail.buildDepsNoOverride')
+    );
+  }
+  if (patch.coverage !== undefined) {
+    parts.push(
+      patch.coverage ? t('detail.coverageEnabledOverride') : t('detail.coverageDisabledOverride')
+    );
+  }
+  return parts.length > 0 ? parts.join(t('common.listSeparator')) : t('detail.cleared');
+}
+
+/** 打开（或聚焦）参数面板 */
+function openPrefsPanel(arg?: unknown): void {
+  const group = arg instanceof GroupTreeItem ? arg.groupName : undefined;
+  panelFocusGroup = group;
+  const panel = PrefsPanel.show({
+    title: t('panel.title'),
+    buildModel: () => buildPanelModel(panelFocusGroup),
+    save: applyPanelSave,
+    onDidDispose: () => {
+      panelFocusGroup = undefined;
+    }
+  });
+  if (!ctx.subscriptions.includes(panel)) {
+    ctx.subscriptions.push(panel);
+  }
 }
 
 async function promptGroupName(
@@ -1339,6 +1562,7 @@ export function activate(extContext: vscode.ExtensionContext): void {
     }
   });
   register('webBoot.createGroup', () => createGroup());
+  register('webBoot.editGroupPreferences', (arg) => openPrefsPanel(arg));
   register('webBoot.renameGroup', async (arg) => {
     if (arg instanceof GroupTreeItem) {
       await renameGroup(arg);
@@ -1447,6 +1671,7 @@ export function activate(extContext: vscode.ExtensionContext): void {
         recomputeConflicts();
         provider.refresh();
         updateStatusBar();
+        PrefsPanel.current?.refresh();
       }
     }),
     runner.onDidChangeState(() => {
