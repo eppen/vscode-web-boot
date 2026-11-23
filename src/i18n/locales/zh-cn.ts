@@ -342,7 +342,6 @@ export const zhCN = {
     '没有可配置的应用：请先确认工作区根目录有 pom.xml 与 @SpringBootApplication 启动类。',
   'panel.invalidPort': '{0}：端口需为 1 - 65535 之间的整数',
   'panel.invalidMainClass': '{0}：主类需为合法的全限定类名',
-  'panel.invalidProfile': '该应用没有这个 profile',
   'panel.saveNothing': '没有需要保存的修改。',
   'panel.saveOk': '已保存 {0} 个应用的配置。',
   'panel.saveSkipped': '已保存 {0} 个应用，跳过 {1} 个（{2}）。',

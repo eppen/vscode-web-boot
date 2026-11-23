@@ -365,7 +365,6 @@ export const en: Record<MessageKey, string> = {
     'Nothing to configure: make sure the workspace root contains pom.xml and a @SpringBootApplication class.',
   'panel.invalidPort': '{0}: port must be an integer between 1 and 65535',
   'panel.invalidMainClass': '{0}: main class must be a valid fully qualified name',
-  'panel.invalidProfile': 'this app has no such profile',
   'panel.saveNothing': 'Nothing to save.',
   'panel.saveOk': 'Saved the configuration of {0} app(s).',
   'panel.saveSkipped': 'Saved {0} app(s), skipped {1} ({2}).',

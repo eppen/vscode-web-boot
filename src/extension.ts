@@ -1014,14 +1014,7 @@ function buildPanelModel(focusGroup?: string): PanelModel {
 
 /** 校验失败字段对应的提示文案 */
 function invalidFieldReason(field: InvalidField): string {
-  switch (field) {
-    case 'port':
-      return t('validate.portOrEmpty');
-    case 'mainClass':
-      return t('validate.mainClassFqn');
-    default:
-      return t('panel.invalidProfile');
-  }
+  return field === 'port' ? t('validate.portOrEmpty') : t('validate.mainClassFqn');
 }
 
 /**
@@ -1051,14 +1044,8 @@ async function applyPanelSave(
       continue;
     }
 
-    const currentProfile = resolveProfile(app, current);
-    const previousPort = current.port ?? resolvePortFromConfig(app.config, currentProfile);
-    const nextProfile = (raw.profile ?? '').trim() || defaultProfile(app.config);
     const diff = diffPreference({
       scannedMainClass: app.mainClass,
-      configPort: resolvePortFromConfig(app.config, nextProfile),
-      previousPort,
-      availableProfiles: app.config.profiles.filter((p) => p !== ''),
       current,
       next: raw
     });

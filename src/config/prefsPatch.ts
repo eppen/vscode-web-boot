@@ -1,11 +1,12 @@
 /**
  * 参数面板的「一整行表单输入 -> AppPreference 补丁」纯逻辑。
  *
- * 写盘语义刻意与单应用编辑（extension.ts 的 editPreferences）保持一致：
- * - 端口留空、或等于该 profile 在配置文件里的端口 -> 不写覆盖；
+ * 面板写盘语义：输入什么存什么，能不拦就不拦。
+ * - 端口留空 -> 跟随配置文件；填了 1-65535 的整数就原样写覆盖
+ *   （刻意不做「等于配置端口就不写覆盖」「换 profile 清端口」这类联动：
+ *   两者运行期等价，但会让人觉得输入没被尊重）；
  * - 主类留空、或等于扫描到的启动类 -> 不写覆盖；
- * - `-am` / 覆盖率是「三态」：undefined 表示跟随全局设置（JSON 里不落字段）；
- * - 换 profile 时旧 profile 的端口覆盖不再适用，一并清掉。
+ * - `-am` / 覆盖率是「三态」：undefined 表示跟随全局设置（JSON 里不落字段）。
  *
  * 不依赖 vscode，可以在 selfcheck 里直接跑。
  */
@@ -26,18 +27,17 @@ export interface RawRowInput {
   coverage?: boolean;
 }
 
-/** 校验失败的字段（调用方负责翻成当前语言的提示） */
-export type InvalidField = 'profile' | 'port' | 'mainClass';
+/**
+ * 校验失败的字段（调用方负责翻成当前语言的提示）。
+ *
+ * profile 不在校验范围内：单应用编辑的「手动输入」接受任意字符串，
+ * 面板保持一致——写进去之后是启动时才暴露的问题，不该在保存时拦。
+ */
+export type InvalidField = 'port' | 'mainClass';
 
 export interface DiffInput {
   /** 扫描到的主类（输入等于它时不写覆盖） */
   scannedMainClass: string;
-  /** 新 profile 在配置文件里的端口（输入等于它时不写覆盖） */
-  configPort: number;
-  /** 切换前该应用的生效端口（换 profile 时判断「用户是否显式改了端口」） */
-  previousPort: number;
-  /** 该应用可选的 profile；为空表示无从校验，直接接受输入 */
-  availableProfiles: string[];
   /** 当前已存偏好（基线） */
   current: AppPreference;
   /** 面板输入 */
@@ -66,31 +66,23 @@ export function samePreference(a: AppPreference, b: AppPreference): boolean {
 
 /** 计算一行输入对应的偏好补丁 */
 export function diffPreference(input: DiffInput): DiffResult {
-  const { current, next, configPort, previousPort, scannedMainClass, availableProfiles } = input;
+  const { current, next, scannedMainClass } = input;
 
   const profileText = (next.profile ?? '').trim();
   const portText = (next.port ?? '').trim();
   const mainText = (next.mainClass ?? '').trim();
 
-  // profile 要么留空（跟随 yml 默认），要么必须是该应用已有的 profile
-  if (profileText && availableProfiles.length > 0 && !availableProfiles.includes(profileText)) {
-    return { patch: {}, changed: false, invalid: 'profile' };
-  }
+  // profile：留空 = 跟随 yml 默认；非空照单全收（与单应用编辑的手动输入一致）
   const profile = profileText || undefined;
 
-  // 端口：留空 / 等于配置文件端口 -> 不写覆盖
+  // 端口：留空 = 跟随配置文件；填了就原样写覆盖，只拦 1-65535 之外的值
   let port: number | undefined;
   if (portText) {
     const parsed = Number(portText);
     if (!isValidPort(parsed)) {
       return { patch: {}, changed: false, invalid: 'port' };
     }
-    port = parsed === configPort ? undefined : parsed;
-  }
-
-  // 换 profile 时旧覆盖不再适用：除非用户把端口改成了别的值，否则一律清掉
-  if (profile !== current.profile && (port === undefined || port === previousPort)) {
-    port = undefined;
+    port = parsed;
   }
 
   // 主类：留空 / 等于扫描值 -> 不写覆盖

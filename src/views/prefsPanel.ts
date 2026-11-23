@@ -36,7 +36,7 @@ export interface PanelRow {
   mainClass: string;
   /** 扫描到的启动类 */
   scannedMainClass: string;
-  /** 同模块的主类候选（datalist） */
+  /** 同模块的主类候选（可点标签） */
   mainClassCandidates: string[];
   /** 三态覆盖：undefined 表示跟随全局设置 */
   buildDependencies?: boolean;
@@ -416,7 +416,24 @@ export function renderHtml(): string {
   input:focus, select:focus { outline: 1px solid var(--vscode-focusBorder, #4daafc); }
   tr.dirty td.app { box-shadow: inset 3px 0 0 var(--vscode-editorWarning-foreground, #d19a66); }
   tr.dirty td.app .id::after { content: ' *'; color: var(--vscode-editorWarning-foreground, #d19a66); }
+  tr.invalid td.app { box-shadow: inset 3px 0 0 var(--vscode-errorForeground, #f85149); }
+  tr.invalid td.app .id::after { content: ' !'; color: var(--vscode-errorForeground, #f85149); }
   .hint { font-size: .85em; opacity: .65; margin-top: 2px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+  .chip {
+    font-family: inherit;
+    font-size: .85em;
+    line-height: 1.5;
+    padding: 0 6px;
+    border: 1px solid var(--vscode-panel-border, rgba(128,128,128,.4));
+    background: transparent;
+    color: inherit;
+    opacity: .8;
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .chip:hover { opacity: 1; border-color: var(--vscode-focusBorder, #4daafc); }
+  .chip.active { opacity: 1; border-color: var(--vscode-focusBorder, #4daafc); color: var(--vscode-focusBorder, #4daafc); }
   .conflict { color: var(--vscode-editorWarning-foreground, #d19a66); font-size: .9em; margin-top: 2px; }
   .empty { opacity: .8; }
 </style>
@@ -450,6 +467,10 @@ const CLIENT_JS = `
   var MODEL = null;
   // appId -> { profile, port, mainClass, buildDependencies, coverage }（都是字符串，'' = 跟随）
   var EDITS = {};
+  // 最近一次保存时因本地校验被拦下的行（保存后并入状态提示）
+  var LOCAL_INVALID = [];
+  // 正在编辑时收到的模型推送：推迟到失焦后再重绘，避免打断打字
+  var PENDING = null;
   var DIRTY = false;
   var SAVING = false;
   var STATUS = null;
@@ -536,24 +557,26 @@ const CLIENT_JS = `
     var configPort = configPortFor(row, profile);
     var stateKey = 'state.' + row.state;
 
-    var profileOptions = '<option value="">' + esc(fmt('panel.profileDefault', row.defaultProfile || '')) + '</option>';
+    // profile 建议：输入框是纯文本（可任意输入，不带 datalist —— datalist 会把输入框
+    // 变成 combobox，webview 里既挡打字又容易被重绘打断），已知 profile 用可点标签给出
+    var profileHint = fmt('panel.profileDefault', row.defaultProfile || '');
+    var pfChips = '';
     row.availableProfiles.forEach(function (name) {
-      profileOptions += '<option value="' + esc(name) + '">' + esc(name) + '</option>';
+      pfChips += '<button type="button" class="chip' + (profile === name ? ' active' : '') +
+        '" data-id="' + esc(row.id) + '" data-chip-field="profile" data-chip-value="' +
+        esc(name) + '">' +
+        esc(name) + '</button>';
     });
-    // 记住但已不在配置里的 profile 也要能看见，否则一保存就被悄悄改掉
-    if (profile && row.availableProfiles.indexOf(profile) < 0) {
-      profileOptions += '<option value="' + esc(profile) + '">' + esc(profile) + '</option>';
-    }
 
-    var listId = 'mc-' + row.id.replace(/[^A-Za-z0-9_-]/g, '_');
-    var list = '';
-    if (row.mainClassCandidates && row.mainClassCandidates.length > 0) {
-      list = '<datalist id="' + listId + '">';
-      row.mainClassCandidates.forEach(function (name) {
-        list += '<option value="' + esc(name) + '"></option>';
-      });
-      list += '</datalist>';
-    }
+    // 主类候选同样用可点标签（不带 datalist，理由同 profile：不要 combobox）
+    var mcChips = '';
+    (row.mainClassCandidates || []).forEach(function (name) {
+      mcChips += '<button type="button" class="chip' +
+        (edit.mainClass === name ? ' active' : '') +
+        '" data-id="' + esc(row.id) + '" data-chip-field="mainClass" data-chip-value="' +
+        esc(name) + '">' +
+        esc(name) + '</button>';
+    });
 
     var follow = fmt('panel.followGlobalWith', T('common.' + (MODEL.globalBuildDependencies ? 'enabled' : 'disabled')));
     var amOptions = '<option value="">' + esc(follow) + '</option>' +
@@ -573,15 +596,19 @@ const CLIENT_JS = `
     html += '<tr data-row="' + esc(row.id) + '">';
     html += '<td class="app"><div class="id">' + esc(row.id) + '</div>' +
       '<div class="dir mono">' + esc(row.relDir) + '</div></td>';
-    html += '<td><select data-id="' + esc(row.id) + '" data-field="profile">' + profileOptions + '</select></td>';
+    html += '<td><input type="text" data-id="' + esc(row.id) + '" data-field="profile" ' +
+      'value="' + esc(edit.profile) + '" ' +
+      'placeholder="' + esc(profileHint) + '" title="' + esc(profileHint) + '" />' +
+      (pfChips ? '<div class="chips">' + pfChips + '</div>' : '') +
+      '<div class="hint">' + esc(profileHint) + '</div></td>';
     html += '<td><input type="text" inputmode="numeric" data-id="' + esc(row.id) + '" data-field="port" ' +
       'data-role="port" value="' + esc(edit.port) + '" />' +
       '<div class="hint" data-role="port-hint" data-id="' + esc(row.id) + '">' +
       esc(fmt('panel.portHint', configPort)) + '</div></td>';
     html += '<td><input type="text" data-id="' + esc(row.id) + '" data-field="mainClass" ' +
-      (list ? 'list="' + listId + '" ' : '') +
       'value="' + esc(edit.mainClass) + '" placeholder="' + esc(row.scannedMainClass) + '" ' +
-      'title="' + esc(fmt('panel.mainClassHint', row.scannedMainClass)) + '" />' + list + '</td>';
+      'title="' + esc(fmt('panel.mainClassHint', row.scannedMainClass)) + '" />' +
+      (mcChips ? '<div class="chips">' + mcChips + '</div>' : '') + '</td>';
     html += '<td><select data-id="' + esc(row.id) + '" data-field="buildDependencies">' + amOptions + '</select></td>';
     html += '<td><select data-id="' + esc(row.id) + '" data-field="coverage">' + covOptions + '</select></td>';
     html += '<td><div>' + esc(stateText) + '</div>' + conflict + '</td>';
@@ -626,8 +653,26 @@ const CLIENT_JS = `
       fields[i].addEventListener('change', onFieldChange);
       syncField(fields[i]);
     }
+    var chips = content.querySelectorAll('[data-chip-field]');
+    for (var c = 0; c < chips.length; c++) {
+      chips[c].addEventListener('click', onChipClick);
+    }
     syncGlobals();
     highlightFocus();
+  }
+
+  /** 点建议标签：把值填进同一行的输入框（等同手输一次，走同一条 dirty 流程） */
+  function onChipClick(ev) {
+    var el = ev.currentTarget;
+    var id = el.getAttribute('data-id');
+    var field = el.getAttribute('data-chip-field');
+    var value = el.getAttribute('data-chip-value');
+    if (!id || !field || value === null) return;
+    var input = document.querySelector('[data-field="' + field + '"][data-id="' + id + '"]');
+    if (!input) return;
+    input.value = value;
+    input.focus();
+    onFieldChange({ target: input });
   }
 
   /** 把 EDITS 里的值写回控件（innerHTML 之后 value 需要重新设置） */
@@ -731,12 +776,8 @@ const CLIENT_JS = `
     STATUS = null;
 
     if (field === 'profile') {
-      // 与单应用编辑一致：换 profile 就清掉端口覆盖（新 profile 的 yml 端口接管）
-      if (edit.profile !== (row.profile || '')) {
-        edit.port = '';
-        var portEl = document.querySelector('[data-role="port"][data-id="' + id + '"]');
-        if (portEl) portEl.value = '';
-      }
+      // 换 profile 不再联动清端口（面板语义 = 输入什么存什么，端口只由用户输入决定）；
+      // 这里只更新提示：新 profile 在配置文件里的端口是多少
       var hint = document.querySelector('[data-role="port-hint"][data-id="' + id + '"]');
       if (hint) {
         hint.textContent = fmt('panel.portHint', configPortFor(row, edit.profile));
@@ -749,14 +790,13 @@ const CLIENT_JS = `
     vscode.postMessage({ type: 'dirty', dirty: true });
   }
 
+  // 与单应用编辑的 validateInput 完全一致：留空 = 跟随配置文件端口；
+  // 其余按 Number 解析，必须是 1 - 65535 的整数（" 8080 "、"+8080"、"8080.0" 都合法）
   function isPortText(text) {
-    if (text === '') return true;
-    for (var i = 0; i < text.length; i++) {
-      var c = text.charAt(i);
-      if (c < '0' || c > '9') return false;
-    }
-    var num = Number(text);
-    return num >= 1 && num <= 65535;
+    var trimmed = String(text).trim();
+    if (trimmed === '') return true;
+    var num = Number(trimmed);
+    return Number.isInteger(num) && num > 0 && num <= 65535;
   }
 
   function isFqn(text) {
@@ -782,6 +822,16 @@ const CLIENT_JS = `
     return true;
   }
 
+  function markInvalid(id, invalid) {
+    var tr = document.querySelector('[data-row="' + id + '"]');
+    if (!tr) return;
+    if (invalid) {
+      tr.className = 'invalid';
+    } else if (tr.className === 'invalid') {
+      tr.className = '';
+    }
+  }
+
   function validateRow(row, edit) {
     if (!isPortText(edit.port || '')) {
       return fmt('panel.invalidPort', row.id);
@@ -793,25 +843,44 @@ const CLIENT_JS = `
     return null;
   }
 
+  function localInvalidText(list) {
+    var reasons = [];
+    for (var i = 0; i < list.length; i++) {
+      reasons.push(list[i].reason);
+    }
+    return fmt('panel.saveSkipped', 0, list.length, reasons.join('; '));
+  }
+
   function onSave() {
     if (!MODEL || SAVING) return;
     var rows = {};
+    var invalid = [];
+    var savedCount = 0;
     var all = allRows();
     for (var i = 0; i < all.length; i++) {
       var row = all[i];
       var edit = editOf(row);
       var error = validateRow(row, edit);
       if (error) {
-        setStatus(error, 'error');
-        markDirty(row.id, true);
-        return;
+        // 非法行不发给扩展：标红该行，其余行照常保存（与单应用编辑一样只影响这一格）
+        invalid.push({ id: row.id, reason: error });
+        markInvalid(row.id, true);
+        continue;
       }
+      markInvalid(row.id, false);
       var out = { profile: edit.profile };
       if (edit.port !== '') out.port = edit.port;
       if (edit.mainClass !== '') out.mainClass = edit.mainClass.trim();
       if (edit.buildDependencies !== '') out.buildDependencies = edit.buildDependencies === 'true';
       if (edit.coverage !== '') out.coverage = edit.coverage === 'true';
       rows[row.id] = out;
+      savedCount++;
+    }
+    LOCAL_INVALID = invalid;
+    if (savedCount === 0) {
+      // 没有可保存的行：不发请求，直接在状态栏说明哪几行没保存
+      setStatus(localInvalidText(invalid), 'error');
+      return;
     }
     SAVING = true;
     STATUS = null;
@@ -821,6 +890,7 @@ const CLIENT_JS = `
 
   function onRevert() {
     EDITS = {};
+    PENDING = null;
     DIRTY = false;
     STATUS = null;
     hideBanner();
@@ -833,7 +903,10 @@ const CLIENT_JS = `
   function onSaved(result) {
     SAVING = false;
     DIRTY = false;
-    var skipped = result.skipped || [];
+    var localInvalid = LOCAL_INVALID;
+    var hadLocalInvalid = localInvalid.length > 0;
+    var skipped = (result.skipped || []).concat(localInvalid);
+    LOCAL_INVALID = [];
     var text;
     if (result.saved === 0 && skipped.length === 0) {
       text = T('panel.saveNothing');
@@ -850,14 +923,43 @@ const CLIENT_JS = `
     if (result.needsRestart > 0) {
       text += ' ' + fmt('panel.saveRestart', result.needsRestart);
     }
-    setStatus(text, skipped.length > 0 ? 'warn' : 'ok');
+    setStatus(text, hadLocalInvalid ? 'error' : skipped.length > 0 ? 'warn' : 'ok');
     markAllClean();
+    // 本地校验没过的行没保存，保持标红，等用户改掉
+    for (var j = 0; j < localInvalid.length; j++) {
+      markInvalid(localInvalid[j].id, true);
+    }
+  }
+
+  /** 是否正在某个编辑控件里打字：此时重绘会打断输入（焦点、光标、输入法组字都会丢） */
+  function isEditingField() {
+    var el = document.activeElement;
+    return !!(el && el.getAttribute && el.getAttribute('data-field'));
   }
 
   function applyModel(model, stale) {
+    if (isEditingField()) {
+      // 打字期间绝不重建 DOM：这次推送推迟到失焦后再应用（改动都在 EDITS 里，不会丢）
+      PENDING = { model: model, stale: stale };
+      return;
+    }
+    doApplyModel(model, stale);
+  }
+
+  /** 失焦后应用被推迟的模型推送 */
+  function flushPending() {
+    if (!PENDING) return;
+    var pending = PENDING;
+    PENDING = null;
+    doApplyModel(pending.model, pending.stale);
+  }
+
+  function doApplyModel(model, stale) {
+    PENDING = null;
     MODEL = model;
     if (!stale) {
       EDITS = {};
+      LOCAL_INVALID = [];
       DIRTY = false;
       SAVING = false;
       STATUS = null;
@@ -886,8 +988,14 @@ const CLIENT_JS = `
 
   byId('btn-save').addEventListener('click', onSave);
   byId('btn-revert').addEventListener('click', onRevert);
+  // 输入框失焦后才应用被推迟的模型推送（延一拍，保证 change 事件先把值写进 EDITS）
+  byId('content').addEventListener('focusout', function () {
+    setTimeout(flushPending, 0);
+  });
   byId('btn-reload').addEventListener('click', function () {
     EDITS = {};
+    PENDING = null;
+    LOCAL_INVALID = [];
     DIRTY = false;
     STATUS = null;
     vscode.postMessage({ type: 'dirty', dirty: false });

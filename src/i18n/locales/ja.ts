@@ -370,7 +370,6 @@ export const ja: Record<MessageKey, string> = {
     '設定できるアプリがありません：ワークスペース直下に pom.xml と @SpringBootApplication クラスがあるか確認してください。',
   'panel.invalidPort': '{0}：ポートは 1 - 65535 の整数で入力してください',
   'panel.invalidMainClass': '{0}：メインクラスは完全修飾クラス名で入力してください',
-  'panel.invalidProfile': 'このアプリにそのプロファイルはありません',
   'panel.saveNothing': '保存する変更はありません。',
   'panel.saveOk': '{0} 件のアプリ設定を保存しました。',
   'panel.saveSkipped': '{0} 件を保存し、{1} 件をスキップしました（{2}）。',

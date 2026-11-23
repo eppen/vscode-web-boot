@@ -56,9 +56,6 @@ function checkTrue(name: string, condition: boolean, detail?: string): void {
 function diffInput(over: Partial<DiffInput> = {}): DiffInput {
   return {
     scannedMainClass: 'com.example.DemoApplication',
-    configPort: 8080,
-    previousPort: 8080,
-    availableProfiles: ['dev', 'test'],
     current: {},
     next: {},
     ...over
@@ -119,15 +116,15 @@ async function testApplyMany(root: string): Promise<void> {
 function testDiff(): void {
   // ---------- 端口 ----------
   const emptyPort = diffPreference(
-    diffInput({ current: { port: 9090 }, next: { port: '' }, previousPort: 9090 })
+    diffInput({ current: { port: 9090 }, next: { port: '' } })
   );
   check('端口留空 -> 清掉覆盖', emptyPort.patch.port, undefined);
   checkTrue('端口留空视为有变化', emptyPort.changed);
 
   check(
-    '端口等于配置文件端口 -> 不写覆盖',
+    '端口等于配置文件端口 -> 也原样写覆盖（不做等值丢弃）',
     diffPreference(diffInput({ next: { port: '8080' } })).patch.port,
-    undefined
+    8080
   );
   check(
     '端口与配置不同 -> 写覆盖',
@@ -140,18 +137,27 @@ function testDiff(): void {
     'port'
   );
   check('端口非数字 -> 判为非法', diffPreference(diffInput({ next: { port: '80x' } })).invalid, 'port');
+  check(
+    '端口接受 Number 可解析的写法（与原 InputBox 一致）',
+    diffPreference(diffInput({ next: { port: ' +9091 ' } })).patch.port,
+    9091
+  );
+  check(
+    '端口 8080.0 -> 解析成 8080 写覆盖',
+    diffPreference(diffInput({ next: { port: '8080.0' } })).patch.port,
+    8080
+  );
 
-  // ---------- 换 profile 清端口 ----------
+  // ---------- 换 profile 保留端口 ----------
   const switchProfile = diffPreference(
     diffInput({
       current: { profile: 'dev', port: 9090 },
-      next: { profile: 'test', port: '9090' },
-      previousPort: 9090
+      next: { profile: 'test', port: '9090' }
     })
   );
-  check('换 profile 时清掉旧端口覆盖', switchProfile.patch, {
+  check('换 profile 不再清端口（输入什么存什么）', switchProfile.patch, {
     profile: 'test',
-    port: undefined,
+    port: 9090,
     mainClass: undefined,
     buildDependencies: undefined,
     coverage: undefined
@@ -160,19 +166,27 @@ function testDiff(): void {
   const switchWithNewPort = diffPreference(
     diffInput({
       current: { profile: 'dev', port: 9090 },
-      next: { profile: 'test', port: '7070' },
-      previousPort: 9090
+      next: { profile: 'test', port: '7070' }
     })
   );
-  check('换 profile 且显式改了端口 -> 保留新端口', switchWithNewPort.patch.port, 7070);
+  check('换 profile 且改了端口 -> 保留新端口', switchWithNewPort.patch.port, 7070);
 
   const clearProfile = diffPreference(diffInput({ current: { profile: 'dev' }, next: {} }));
   check('profile 留空 -> 跟随 yml 默认', clearProfile.patch.profile, undefined);
 
   check(
-    'profile 不在可用列表 -> 判为非法',
-    diffPreference(diffInput({ next: { profile: 'uat' } })).invalid,
-    'profile'
+    'profile 不在可用列表 -> 照样接受（与单应用编辑的手动输入一致）',
+    diffPreference(diffInput({ next: { profile: 'uat' } })).patch.profile,
+    'uat'
+  );
+  check(
+    'profile 带空格的自由文本也接受（只 trim 两端）',
+    diffPreference(diffInput({ next: { profile: ' uat 2 ' } })).patch.profile,
+    'uat 2'
+  );
+  checkTrue(
+    'profile 不会再被判为非法',
+    diffPreference(diffInput({ next: { profile: 'uat' } })).invalid === undefined
   );
 
   // ---------- 主类 ----------
@@ -217,8 +231,7 @@ function testDiff(): void {
   const unchanged = diffPreference(
     diffInput({
       current: { profile: 'dev', port: 9091, mainClass: 'com.example.X', coverage: true },
-      next: { profile: 'dev', port: '9091', mainClass: 'com.example.X', coverage: true },
-      previousPort: 9091
+      next: { profile: 'dev', port: '9091', mainClass: 'com.example.X', coverage: true }
     })
   );
   checkTrue('与基线一致时 changed = false', !unchanged.changed);
@@ -256,6 +269,27 @@ function testPanelHtml(): void {
   check('内联脚本语法合法', syntaxError, undefined);
   checkTrue('内联脚本会向扩展请求数据（ready）', script.includes("type: 'ready'"));
   checkTrue('内联脚本处理保存结果（saved）', script.includes("'saved'"));
+  checkTrue(
+    'profile 列是纯文本输入（不带 list，不会变成 combobox）',
+    script.includes('data-field="profile" ') && !script.includes('list="pf-') &&
+      !script.includes('<datalist id="pf-')
+  );
+  checkTrue(
+    'profile / 主类都用可点标签给建议（chips）',
+    script.includes('data-chip-field="profile"') && script.includes('data-chip-field="mainClass"')
+  );
+  checkTrue(
+    '主类也不带 datalist（同样是纯文本输入）',
+    !script.includes('list="mc-') && !script.includes('<datalist id="mc-')
+  );
+  checkTrue(
+    '换 profile 不再联动清端口',
+    !script.includes('PORT_TOUCHED')
+  );
+  checkTrue(
+    '打字期间推迟模型重绘（不打断输入）',
+    script.includes('var PENDING = null') && script.includes('function flushPending')
+  );
 
   const labels = buildPanelLabels();
   check(

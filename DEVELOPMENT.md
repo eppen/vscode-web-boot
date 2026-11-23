@@ -109,7 +109,7 @@ sample-monitor-server   dev    :9999   /monitor
 | `Web Boot: 指定端口运行...` | 临时覆盖端口并记住 |
 | `Web Boot: 编辑 Profile / 端口 / 主类 / -am / 覆盖率...` | 逐项修改记住的 profile、端口、主类、`-am` 开关与覆盖率开关，不启动进程；端口留空则回到配置文件的值，主类可选扫描到的候选或手动输入，`-am` 与覆盖率均可选跟随全局或按应用覆盖，运行中的实例重启后生效 |
 | `Web Boot: 新建分组...` | 新建手动分组，之后可拖拽应用加入 |
-| `Web Boot: 编辑分组参数...` | 打开参数面板：按分组（含「未分组」）把应用列成表格，直接改 profile / 端口 / 主类 / `-am` / 覆盖率，一次保存写回 `.vscode/web-boot.json`。端口等于配置文件端口、主类等于扫描值时不会写成覆盖；「跟随全局」会清掉该应用的覆盖 |
+| `Web Boot: 编辑分组参数...` | 打开参数面板：按分组（含「未分组」）把应用列成表格，直接改 profile / 端口 / 主类 / `-am` / 覆盖率，一次保存写回 `.vscode/web-boot.json`。profile 可任意输入（下方标签点选即可）；端口填 1-65535 就写成覆盖，主类等于扫描值时不写覆盖；「跟随全局」会清掉该应用的覆盖 |
 | `Web Boot: 重命名分组...` / `删除分组` | 重命名或删除分组；删除分组只解除归类，不删除应用 |
 | `Web Boot: 移动到分组...` | 通过菜单把某个应用移入分组或移出到「未分组」 |
 | `Web Boot: 启动整组` / `调试整组` / `停止整组` | 按顺序启动（或带 JDWP 调试启动）组内未运行的应用并等待就绪；停止组内运行中的应用 |
@@ -303,11 +303,13 @@ reactor 内的 `-am` 由 `webBoot.buildDependencies` 控制。关闭后命令变
 分组参数面板（`src/views/prefsPanel.ts`）按分组把应用的 profile / 端口 / 主类 / `-am` / 覆盖率列成一张表，改完一次保存。几个实现约束：
 
 - **资源全部内联。** `.vscodeignore` 排除了 `src/**`，走 `media/` 目录要额外改打包配置；这里把 HTML / CSS / JS 都写成字符串，用 CSP nonce 放行（`default-src 'none'`，无外部资源），esbuild 打出来的单文件 `dist/extension.js` 里就带着面板。
-- **面板只管展示与收集输入。** 写盘与校验都在 `extension.ts` 的 `applyPanelSave` 里，调用 `src/config/prefsPatch.ts` 的纯函数 `diffPreference`，语义与单应用编辑（`editPreferences`）严格一致：
-  - 端口留空或等于该 profile 在配置文件里的端口 -> 不写覆盖；主类留空或等于扫描值 -> 不写覆盖；
+- **面板只管展示与收集输入。** 写盘与校验都在 `extension.ts` 的 `applyPanelSave` 里，调用 `src/config/prefsPatch.ts` 的纯函数 `diffPreference`，语义是「输入什么存什么」：
+  - 端口留空 -> 跟随配置文件；填了 1-65535 的整数就写成覆盖（不因为等于配置端口而不写，换 profile 也不清）；
+  - 主类留空或等于扫描值 -> 不写覆盖；
   - `-am` / 覆盖率是三态，`undefined` 表示跟随全局（JSON 里不落字段）；
-  - 换 profile 时旧 profile 的端口覆盖一并清掉（除非用户显式改成了别的端口）；
-  - 非法 profile / 端口 / 主类整行跳过，不写盘。
+  - 非法端口 / 主类整行跳过，不写盘；profile 不校验，任意文本照单全收。
+  - 单应用编辑（`editPreferences`）保持原样：换 profile 仍清端口覆盖、端口等于配置端口仍不写覆盖。两边只差「端口怎么落盘」，运行期等价。
+- **打字期间不重绘。** profile / 端口输入框是纯文本框（不带 datalist，避免被映射成 combobox）；webview 收到模型推送时若焦点还在某个输入格里，这次推送先压到 `PENDING`，`focusout` 后再重绘——否则表格 `innerHTML` 重建会吞掉正在输入的内容与光标。
 - **一次写盘。** `PreferenceStore.applyMany(patches)` 合并完所有应用后只 `persist()` 一次，避免 N 次同步写盘。
 - **消息协议。** webview 发 `ready` / `reload` / `dirty` / `save`，扩展回 `model` / `saved` / `error`。面板是单例，重复打开只 `reveal()` 并重新推一份数据。
 - **与外部变化同步。** `scanAndRefresh()` 与 `webBoot.*` 配置变更后会 `PrefsPanel.current?.refresh()`：面板干净时直接换数据；面板有未保存修改时只推数据 + `stale` 标记，前端保留输入并提示「外部已变化」，绝不覆盖用户正在编辑的内容。
