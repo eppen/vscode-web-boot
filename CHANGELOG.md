@@ -2,7 +2,7 @@
 
 本扩展遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## Unreleased
+## 0.2.1
 
 ### Changed
 
